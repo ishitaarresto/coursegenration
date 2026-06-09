@@ -1,0 +1,70 @@
+"""Grounded prompts. The system prompt is the factual-accuracy guardrail."""
+
+GROUNDING_SYSTEM = (
+    "You are an expert instructional designer building corporate training courses, "
+    "with a focus on workplace safety.\n\n"
+    "STRICT RULES:\n"
+    "1. Use ONLY the SOURCE CONTENT provided by the user as your source of truth.\n"
+    "2. Never invent facts, numbers, procedures, regulations, or names not present in the source.\n"
+    "3. If the source lacks information for a field, leave it empty or omit it — do NOT fabricate.\n"
+    "4. Rephrase for clarity and simplicity, but preserve the source's meaning exactly.\n"
+    "5. Write clear, concise, employee-friendly language suitable for micro-learning.\n"
+    "Always respond by calling the provided tool with valid structured data."
+)
+
+OUTLINE_INSTRUCTION = (
+    "Design a course outline from the SOURCE CONTENT.\n"
+    "- Create a clear course title, a 2-3 sentence description, and 3-6 course-level learning objectives.\n"
+    "- Break the content into modules (chapters); within each module create concise micro-learning lessons.\n"
+    "- {mode_hint}\n"
+    "- Each lesson needs a title and 2-4 specific learning objectives.\n"
+    "- Keep lessons short and focused (one idea each). Do not write lesson body content yet.\n"
+    "{title_hint}"
+)
+
+QUICK_HINT = "QUICK mode: produce exactly ONE module with a small number of lessons."
+DETAILED_HINT = "DETAILED mode: produce multiple modules, each with several lessons, covering all the content."
+
+LESSON_INSTRUCTION = (
+    "Write the full micro-learning content for this lesson, grounded only in the SOURCE CONTENT.\n\n"
+    "COURSE: {course_title}\n"
+    "MODULE: {module_title}\n"
+    "LESSON: {lesson_title}\n"
+    "LESSON OBJECTIVES: {objectives}\n\n"
+    "Produce:\n"
+    "- key_takeaways: 3-5 short bullet points.\n"
+    "- simplified_explanation: a clear, plain-language explanation of the lesson topic.\n"
+    "- real_world_examples: 1-3 concrete examples (only if supported by the source).\n"
+    "- safety_scenarios: situations + the correct action (only if the source covers safety here; else empty).\n"
+    "- summary: 2-3 sentence recap.\n"
+    "- narration_script: a natural, spoken-style teaching script for this lesson (for later voice narration)."
+)
+
+SLIDES_INSTRUCTION = (
+    "Create a rich, highly interactive, visually engaging slide deck. "
+    "Grounded ONLY in the SOURCE CONTENT and the lesson data below.\n\n"
+    "LESSON: {lesson_title}\n"
+    "EXPLANATION: {explanation}\n"
+    "KEY TAKEAWAYS: {takeaways}\n"
+    "REAL-WORLD EXAMPLES: {examples}\n"
+    "SAFETY SCENARIOS: {safety}\n"
+    "SUMMARY: {summary}\n\n"
+    "SLIDE TYPES AVAILABLE (use a variety):\n"
+    "- 'title'          : opening title slide (1 per deck, big heading + subtitle in note)\n"
+    "- 'hook'           : striking opening statement to grab attention (note = the quote/stat, bullets = key facts)\n"
+    "- 'content'        : short bullets (≤6 words each), suggest icon\n"
+    "- 'warning'        : bright red; hazards/dangers/violations — MUST use for any safety risk\n"
+    "- 'diagram'        : describe a helpful visual (flowchart, process, structure) in 'diagram' field\n"
+    "- 'comparison'     : 'Don't vs Do' — first half of bullets = bad, second half = good\n"
+    "- 'timeline'       : numbered steps/process — put each step as a bullet\n"
+    "- 'knowledge_check': one question in heading, answer options as bullets, correct answer hint in note\n"
+    "- 'summary'        : closing recap bullets + green background\n\n"
+    "RULES:\n"
+    "1. 8-12 slides total — rich and varied, NOT all 'content'.\n"
+    "2. Bullets: SHORT phrases only (≤7 words), no full sentences.\n"
+    "3. Every slide needs an icon hint (e.g. 'car','road','warning','hardhat','eye','speed','sleep','phone').\n"
+    "4. Include at least: 1 hook, 1+ warning (if safety content), 1 comparison or timeline, "
+    "   1 knowledge_check, 1 summary.\n"
+    "5. note field = extra speaker context / the correct quiz answer.\n"
+    "6. diagram field: only fill for 'diagram' type — describe a process or visual in 1-2 sentences."
+)

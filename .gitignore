@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+
+# Environment — NEVER commit real keys
+backend/.env
+.env
+*.env
+
+# Database
+*.db
+*.db-shm
+*.db-wal
+
+# Generated media (MP4, WebM, WAV — large binary files)
+backend/media/
+media/
+
+# Flutter
+frontend/build/
+frontend/.dart_tool/
+frontend/.flutter-plugins
+frontend/.flutter-plugins-dependencies
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Playwright
+backend/playwright-report/
+*.log
