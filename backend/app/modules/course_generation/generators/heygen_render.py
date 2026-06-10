@@ -84,11 +84,23 @@ def generate_heygen_video(
         style=style,
         course_type=course_type,  # type: ignore[arg-type]
         duration_minutes=duration_minutes,
+        lang=lang,
         **inp,
     )
 
+    # Use the full master reference prompt to craft a tailored, paste-ready HeyGen
+    # prompt for THIS script. Falls back to the template brief if crafting fails.
+    engine_prompt = style_prompts.craft_video_prompt(
+        style,
+        topic=lesson_title,
+        narration=inp["narration"],
+        lang=lang,
+        duration_minutes=duration_minutes,
+        fallback=brief.engine_prompt,
+    )
+
     heygen_provider.generate(
-        brief.engine_prompt,
+        engine_prompt,
         title=f"{lesson_title} [{style}]",
         out_path=out,
     )
@@ -123,6 +135,7 @@ def generate_hybrid_video(
         course_type=course_type,  # type: ignore[arg-type]
         duration_minutes=duration_minutes,
         hybrid_claude_fraction=claude_fraction,
+        lang=lang,
         **inp,
     )
 
@@ -143,8 +156,16 @@ def generate_hybrid_video(
     # the free base. Stitching uses the existing ffmpeg concat helper.
     premium_dir = Path("media") / "hybrid" / str(lesson_id)
     premium = premium_dir / f"{lang}_premium.mp4"
+    engine_prompt = style_prompts.craft_video_prompt(
+        style_prompts.HYBRID,
+        topic=lesson_title,
+        narration=inp["narration"],
+        lang=lang,
+        duration_minutes=duration_minutes,
+        fallback=brief.engine_prompt,
+    )
     heygen_provider.generate(
-        brief.engine_prompt,
+        engine_prompt,
         title=f"{lesson_title} [hybrid-premium]",
         out_path=premium,
     )

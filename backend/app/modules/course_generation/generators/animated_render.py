@@ -167,11 +167,45 @@ def generate_whiteboard_video(
     words = synthesise_with_timings(script, lang, audio)
     dur = _audio_len(audio)
 
-    # 3. LLM scene plan (built from the localised script; icon queries stay English)
+    # 3. LLM scene plan (scenes only — never fails on questions)
     plan = generate_whiteboard_plan(llm, script, lesson_title)
 
-    # 3. Build animated HTML
-    html_doc = render_whiteboard_html(lesson_title, plan, words, dur)
+    # 4. Questions (MCQ + True/False) separately — failure here never blocks render
+    from app.modules.course_generation.generators.whiteboard_plan import generate_questions
+    questions = generate_questions(llm, script, len(plan.scenes))
+
+    # 4b. Persist quiz data as a sidecar JSON so the frontend can fetch it and
+    #     pause the video for interactive answering. Empty list if no questions.
+    try:
+        import json as _json
+        scene_ends = []
+        _total = sum(len(s.script_segment) for s in plan.scenes) or 1
+        _cur = 0.0
+        for s in plan.scenes:
+            _cur += (len(s.script_segment) / _total) * dur
+            scene_ends.append(_cur)
+        quiz_out = []
+        for q in questions:
+            si = min(q.after_scene, len(scene_ends) - 1) if scene_ends else 0
+            opts = list(q.options or [])
+            if q.kind == "true_false" and not opts:
+                opts = ["True", "False"]
+            quiz_out.append({
+                "kind": q.kind,
+                "timestamp": round(scene_ends[si] if scene_ends else dur, 2),
+                "question": q.question,
+                "options": opts,
+                "correct_index": q.correct_index,
+                "explanation": q.explanation,
+            })
+        (work / f"{lang}.quiz.json").write_text(
+            _json.dumps(quiz_out, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+    except Exception:
+        pass  # quiz sidecar is best-effort; never block the render
+
+    # 5. Build animated HTML
+    html_doc = render_whiteboard_html(lesson_title, plan, words, dur, questions=questions)
     html_file = work / "scene.html"
     html_file.write_text(html_doc, encoding="utf-8")
 

@@ -134,9 +134,12 @@ class _HomeState extends State<_Home> {
 }
 
 // ── Left panel ─────────────────────────────────────────────────
-const _langs = {'en':'🇺🇸 English','hi':'🇮🇳 Hindi','es':'🇪🇸 Spanish',
-  'fr':'🇫🇷 French','de':'🇩🇪 German','ar':'🇸🇦 Arabic','zh':'🇨🇳 Chinese',
-  'ja':'🇯🇵 Japanese','pt':'🇧🇷 Portuguese','ru':'🇷🇺 Russian'};
+// ✨ = premium Sarvam AI voice.  English uses free Microsoft edge-tts.
+// Only Hindi + English enabled for now (per requirement).
+const _langs = {
+  'en': '🇺🇸 English',
+  'hi': '🇮🇳 Hindi ✨ (Sarvam)',
+};
 
 class _LeftPanel extends StatelessWidget {
   const _LeftPanel({required this.ctrl, required this.mode, required this.lang,

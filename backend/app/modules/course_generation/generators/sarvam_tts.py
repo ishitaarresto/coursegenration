@@ -27,14 +27,19 @@ from app.core.config import settings
 #            kavya, amit, dev, ishita, shreya, ananya, aryan, meera, vivaan…
 SARVAM_VOICES: dict[str, tuple[str, str]] = {
     # (sarvam_lang_code, speaker)
-    "hi":    ("hi-IN", "ananya"),   # Hindi — clear female instructor
-    "hi-in": ("hi-IN", "ananya"),
-    "ta":    ("ta-IN", "meera"),    # Tamil
-    "te":    ("te-IN", "aryan"),    # Telugu
-    "bn":    ("bn-IN", "priya"),    # Bengali
-    "gu":    ("gu-IN", "kavya"),    # Gujarati
-    "kn":    ("kn-IN", "ishita"),   # Kannada
-    "ml":    ("ml-IN", "pooja"),    # Malayalam
+    # bulbul:v3-compatible speakers ONLY (verified against the API):
+    # aditya, ritu, ashutosh, priya, neha, rahul, pooja, rohan, simran, kavya,
+    # amit, dev, ishita, shreya, ratan, varun, manan, sumit, roopa, kabir,
+    # aayan, shubh, advait, anand, tanya, tarun, sunny, mani, gokul, vijay,
+    # shruti, suhani, mohit, kavitha, rehan, soham, rupali, niharika
+    "hi":    ("hi-IN", "priya"),    # Hindi — clear female instructor
+    "hi-in": ("hi-IN", "priya"),
+    "ta":    ("ta-IN", "pooja"),    # Tamil
+    "te":    ("te-IN", "kavya"),    # Telugu
+    "bn":    ("bn-IN", "shreya"),   # Bengali
+    "gu":    ("gu-IN", "ishita"),   # Gujarati
+    "kn":    ("kn-IN", "roopa"),    # Kannada
+    "ml":    ("ml-IN", "niharika"), # Malayalam
     "mr":    ("mr-IN", "ritu"),     # Marathi
     "pa":    ("pa-IN", "simran"),   # Punjabi
     "od":    ("od-IN", "neha"),     # Odia

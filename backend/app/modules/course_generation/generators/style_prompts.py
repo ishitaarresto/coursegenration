@@ -120,20 +120,71 @@ text overlays, and icons. Narration is handled externally via TTS audio overlay.
 Violating this wastes credits and breaks the video format.
 """
 
+_LANG_NAMES = {
+    "en": "English", "en-gb": "English", "en-in": "English",
+    "hi": "Hindi (Devanagari script)", "ta": "Tamil", "te": "Telugu",
+    "bn": "Bengali", "gu": "Gujarati", "kn": "Kannada", "ml": "Malayalam",
+    "mr": "Marathi", "pa": "Punjabi", "od": "Odia", "es": "Spanish",
+    "fr": "French", "de": "German", "ar": "Arabic", "zh": "Chinese",
+    "ja": "Japanese", "ko": "Korean", "pt": "Portuguese", "ru": "Russian",
+}
+
+
+def _lang_directive(lang: str) -> str:
+    name = _LANG_NAMES.get(lang.lower(), "the narration language")
+    return (
+        f"LANGUAGE: The narration is in {name}. ALL on-screen text — titles, labels, "
+        f"callouts, captions, key terms — MUST be written in {name} to match the "
+        f"narration. Do NOT mix languages on screen."
+    )
+
+
 _UNIVERSAL_RULES = """\
 UNIVERSAL RULES (apply to every scene):
 - NO AVATAR. NO TALKING HEAD. Zero. Never. (See constraint above.)
 - Ground every visual STRICTLY in the narration provided below. Never invent
   facts, statistics, regulations, or procedures that are not in the script.
 - Every sentence of narration MUST be supported by a relevant on-screen visual.
+- SHOW REAL OBJECTS: every tool, machine, vehicle, PPE item, or hazard named in the
+  script must appear as a clear animated object — not an abstract shape or generic icon.
+- USE WRONG-vs-RIGHT SCENARIOS for every safety rule: show the unsafe action (red ❌),
+  then the correct safe action (green ✅), side by side or in sequence.
 - Never leave the screen static for more than a few seconds.
 - Never show a plain wall of text.
 - Keep on-screen text short (labels, callouts, key terms) — the narration carries detail.
-- Use clear, high-contrast, professional 2026 corporate-training aesthetics.
+- Use clear, high-contrast, cinematic 2026 corporate-training aesthetics.
 - Reinforce safety: correct practice = green indicators; hazards/violations = red indicators.
+- If the script contains a question, quiz, or "true or false" prompt, render it as a
+  clean on-screen QUESTION CARD with the options listed, then reveal the correct answer.
 - End with a concise animated recap / checklist of the lesson's key takeaways.
 - NEVER summarize the script — convert EVERY concept into a specific visual.
 - Produce final output as structured JSON with one object per scene.
+"""
+
+# How to turn each line of narration into a concrete visual. Shared by all styles.
+_CONVERSION_LOGIC = """\
+HOW TO CONVERT THE SCRIPT INTO VISUALS (apply line by line — every line earns a visual):
+- Find the core message of each line, then SHOW it — never narrate over a blank screen.
+- Abstract idea / principle / definition → a clear visual metaphor or labelled diagram.
+- Action / verb                          → an animated demonstration of that action.
+- List / steps / procedure               → an infographic or step-by-step sequence that builds up.
+- Example                                → a short mini-scene that plays it out.
+- Warning / risk / hazard                → a strong visual alert (red, pulsing, hazard iconography).
+- Comparison / "do vs don't"             → a split-screen (wrong ❌ vs right ✅, or before vs after).
+- Object / tool / machine / PPE          → show the REAL object, then animate it in use.
+- Person / place / environment           → show the person performing the action in that setting.
+- Data / number / percentage             → an animated chart, counter, or big stat callout.
+Keep pacing fast enough to stay engaging, but never rushed — one clear idea per scene.
+"""
+
+# Cinematic transition vocabulary — gives scenes intentional, premium connective tissue.
+_TRANSITION_VOCAB = """\
+TRANSITIONS (make every style change feel intentional, never abrupt):
+- A hand-drawn sketch morphs into the real, fully-rendered object or scene.
+- A diagram zooms into a cinematic real-world example.
+- A flowchart transforms into a live process animation.
+- A whiteboard expands outward into a full environment.
+- Use match-cuts, wipes, reveals, and zooms to flow between scenes.
 """
 
 _ANIMATED_SCENE_JSON_SCHEMA = """\
@@ -234,8 +285,12 @@ Your task: transform the lesson script below into a PREMIUM animated training vi
 TOPIC: "{ctx.topic}"
 TARGET AUDIENCE: {ctx.audience}
 
+{_lang_directive(ctx.lang)}
+
 STYLE: Animated Scene (HeyGen)
-Goal: Highly visual animated educational video — think top-tier 2026 corporate e-learning.
+Goal: A fully-animated, avatar-free training FILM — the polish of a premium animated
+explainer. Every important sentence becomes its own visual scene. It must feel like a
+cinematic training film, never a slideshow and never a static screen.
 
 {_NO_AVATAR_RULE}
 SCENE RULES:
@@ -244,6 +299,12 @@ SCENE RULES:
 - Never show a talking avatar with no supporting visuals.
 - Generate animations, icons, illustrations, motion graphics, transitions, labels,
   arrows, diagrams, and explanatory visuals for every scene.
+- Turn abstract ideas into visual metaphors; turn actions into animated demonstrations;
+  turn lists into infographics; turn examples into mini-scenes; turn warnings into strong
+  visual alerts; turn comparisons into split-screen visuals.
+
+{_CONVERSION_LOGIC}
+{_TRANSITION_VOCAB}
 
 CONTEXT-AWARE OBJECT GENERATION (pull real objects from the narration):
 - Equipment / machinery named → animate that exact equipment in a realistic workplace.
@@ -295,38 +356,47 @@ Your task: transform the lesson script below into a WHITEBOARD DOODLE training v
 TOPIC: "{ctx.topic}"
 TARGET AUDIENCE: {ctx.audience}
 
+{_lang_directive(ctx.lang)}
+
 STYLE: Whiteboard Doodle (HeyGen)
-Goal: A real instructor teaching live on a whiteboard — hand draws everything in real time.
-The HAND draws. No avatar, no talking head — only the hand and the board.
+Goal: A world-class educational documentary taught LIVE through a whiteboard instructor.
+A realistic human hand holding a marker is the teacher throughout — drawing, sketching,
+highlighting. BUT this is NOT a plain whiteboard animation: whenever the script names a
+real object, tool, machine, environment, person, process, or scenario, the whiteboard
+naturally TRANSFORMS into rich animated visuals and real-world scenes, then returns to
+the board. The viewer should feel taught by a master instructor, never shown slides.
 
 {_NO_AVATAR_RULE}
 SCENE RULES:
 - Break the ENTIRE script into scenes of 5-15 seconds each.
-- A realistic human hand holding a marker appears CONTINUOUSLY.
-- The hand draws EVERY illustration, diagram, object, arrow, label, and workplace scene
-  in real time as the lesson progresses.
-- Hand actively teaches: drawing, sketching, highlighting, circling, underlining,
+- A realistic human hand holding a marker appears CONTINUOUSLY as the teacher.
+- The hand draws illustrations, diagrams, objects, arrows, labels, and workplace scenes
+  in real time, and actively teaches: sketching, highlighting, circling, underlining,
   connecting ideas with arrows, and revealing information step-by-step.
+- The hand must NEVER feel random — it always guides the lesson.
 
-NARRATION-TO-DRAWING RULE (apply to every sentence):
-Whatever the narrator names, the hand draws it immediately, then it animates.
-  • Mentions a machine/tool → hand draws it, then it animates (rotates, lifts, operates).
-  • Mentions a measurement or formula → hand draws the object, dimension lines, then
-    builds the formula step-by-step and animates the calculation.
-  • Mentions a hazard → hand draws it, then animates the failure (cracks, sparks, red warning).
-  • Mentions correct method → hand draws it with smooth motion and green check marks.
-  • Mentions a list/procedure → hand writes a checklist and ticks items as they're covered.
+DO NOT STAY A SIMPLE WHITEBOARD — TRANSFORM ON CUE (apply to every sentence):
+Whatever the narrator names, the hand draws it, then it COMES ALIVE as a real scene.
+  • Object / tool / machine → hand sketches it, sketch MORPHS into the real object operating.
+  • Measurement / formula → hand draws the object + dimension lines, builds the calculation live.
+  • Hazard → hand draws it, the drawing animates into a real failure (cracks, sparks, red alert).
+  • Correct method → drawn, then shown as a clean real demonstration with green check marks.
+  • Process / list → hand writes a checklist, which expands into a live process animation.
+  • Environment / location → the board expands outward into that full environment.
 
 HARD CONSTRAINTS:
 - DO NOT make a slideshow.
 - DO NOT show static scenes for more than 2 seconds.
 - DO NOT show only text.
 - DO NOT use generic stock footage.
-- DO NOT rely on avatars — the HAND and DRAWINGS teach.
+- DO NOT rely on avatars — the HAND, DRAWINGS, and transformed scenes teach.
 
+{_CONVERSION_LOGIC}
+{_TRANSITION_VOCAB}
 ANIMATION TOOLKIT:
 animated arrows · motion lines · zoom effects · callout boxes · labels · check marks ·
-warning icons · comparison graphics · cause-and-effect demonstrations.
+warning icons · comparison graphics · cause-and-effect demonstrations ·
+sketch-to-real-scene morphs · diagram-zoom-into-example.
 
 KEY POINTS THE HAND SHOULD DRAW:
 {_fmt_points(ctx.key_points)}
@@ -359,10 +429,15 @@ WITHOUT using HeyGen — using the free in-house Claude rendering engine.
 TOPIC: "{ctx.topic}"
 TARGET AUDIENCE: {ctx.audience}
 
+{_lang_directive(ctx.lang)}
+
 STYLE: Claude Native AI Video
-Goal: Think like an award-winning educational documentary creator.
-Use cinematic scenes, AI-generated environments, realistic simulations,
-diagrams, and motion graphics. Visual storytelling should explain concepts deeply.
+Goal: A premium educational film that is a HYBRID of whiteboard teaching and cinematic
+animation. A whiteboard instructor's hand guides the lesson — drawing, circling,
+underlining, revealing ideas progressively — while rich animated objects, tools,
+diagrams, and real-world scenarios appear whenever they help understanding. Mix the two
+naturally: whiteboard for abstract ideas, lists, steps, and comparisons; animated scenes
+for objects, tools, people, places, actions, procedures, and real situations.
 
 {_NO_AVATAR_RULE}
 SCENE RULES:
@@ -375,7 +450,12 @@ SCENE RULES:
 - icon_query MUST ALWAYS be in ENGLISH regardless of the lesson language.
 - Add an engaging question_pop per scene where natural ("Can you spot the hazard?").
 - Use a stat element whenever the narration gives a number, ratio, or count.
+- Whiteboard for abstract/lists/steps/comparisons; animated real-object scenes for
+  concrete objects/tools/people/places/actions/procedures. Never force one style.
 - End with a recap scene listing key takeaways as a checklist.
+
+{_CONVERSION_LOGIC}
+{_TRANSITION_VOCAB}
 
 REQUIREMENTS:
 - High visual quality.
@@ -415,6 +495,8 @@ HeyGen animated scenes and Claude cinematic scenes throughout the video.
 TOPIC: "{ctx.topic}"
 TARGET AUDIENCE: {ctx.audience}
 
+{_lang_directive(ctx.lang)}
+
 STYLE: Hybrid (HeyGen + Claude)
 Goal: Seamless alternating video — premium HeyGen animation for impact moments,
 Claude cinematic for explanatory/conceptual moments.
@@ -432,10 +514,25 @@ Example:
   Scene 4 → Claude Cinematic (rules and checklist)
   … continue alternating until the lesson ends.
 
+TWO CREATIVE MODES (aim for a ~50/50 split of total runtime):
+  HEYGEN MODE → whiteboard teaching: a realistic hand with a marker, hand-drawn
+    explanations, labels, arrows, circles, quick sketches, simple animated teaching.
+    Best for: definitions, principles, lists, comparisons, step-by-step logic.
+  CLAUDE MODE → cinematic animation: real/stylised environments, animated objects,
+    tools, people, machines, scenarios, motion graphics, strong visual storytelling.
+    Best for: demonstrations, examples, processes, emergencies, actions, real situations.
+
+VISUAL DECISION LOGIC (route each line by its content):
+  Abstract idea / definition / principle / comparison / list → HEYGEN MODE.
+  Concrete object / tool / place / person / event / procedure / emergency / action → CLAUDE MODE.
+
 ROUTING RULE:
   Live demonstrations, equipment-in-action, hazard/safe comparisons, cinematic intros,
   and the closing → HeyGen.
   Definitions, lists, rules, formulas, step-by-step explanations, recaps → Claude.
+
+{_CONVERSION_LOGIC}
+{_TRANSITION_VOCAB}
 
 SCENE RULES:
 - Break the ENTIRE script into scenes of 5-15 seconds each.
@@ -472,6 +569,7 @@ class PromptContext:
     duration_minutes: int
     key_points: list[str]
     closing_directive: str
+    lang: str = "en"
 
 
 _BUILDERS = {
@@ -493,6 +591,7 @@ def build_style_brief(
     course_type: CourseType = "detailed",
     duration_minutes: int = 15,
     hybrid_claude_fraction: float = 0.5,
+    lang: str = "en",
 ) -> StyleBrief:
     """Assemble the final engine prompt + plan for a given style.
 
@@ -517,6 +616,7 @@ def build_style_brief(
         duration_minutes=duration_minutes,
         key_points=key_points or [],
         closing_directive=closing,
+        lang=lang,
     )
 
     engine_prompt = _BUILDERS[style](ctx)
@@ -544,3 +644,63 @@ def build_style_brief(
         brief.notes.append("Free in-house render.")
 
     return brief
+
+
+# ── Reference-prompt-driven crafting (the strong author prompts, used in full) ──
+
+
+def craft_video_prompt(
+    style: str,
+    *,
+    topic: str,
+    narration: str,
+    lang: str = "en",
+    duration_minutes: int = 15,
+    fallback: str = "",
+) -> str:
+    """Craft a polished, paste-ready video prompt using the full reference prompt.
+
+    The verbatim master reference prompt (reference_prompts.py) is used as the system
+    instruction; Claude converts THIS lesson's script into one tailored, production-ready
+    generation prompt that fits HeyGen's input limit. On any failure, returns `fallback`
+    (the template-built brief) so a render is never blocked.
+    """
+    from app.modules.course_generation.generators import reference_prompts
+
+    system = reference_prompts.BY_STYLE.get(style)
+    if not system:
+        return fallback or narration
+
+    lang_name = _LANG_NAMES.get(lang.lower(), "the script's language")
+    instruction = (
+        f"TOPIC: {topic}\n"
+        f"TARGET VIDEO LENGTH: about {duration_minutes} minutes.\n"
+        f"NARRATION LANGUAGE: {lang_name} (keep narration and ALL on-screen text in this language).\n\n"
+        "Apply everything in your instructions to the SCRIPT below.\n\n"
+        "OUTPUT REQUIREMENTS — IMPORTANT:\n"
+        "- Output ONLY the final, paste-ready video-generation prompt. No preamble, no\n"
+        "  headings, no scene-by-scene breakdown, no commentary.\n"
+        "- It must be a single rich descriptive prompt the video engine can use directly.\n"
+        "- Keep it UNDER 3500 characters.\n"
+        "- Absolutely NO avatar, presenter, or talking head. Voiceover only.\n"
+        f"- Write any on-screen text in {lang_name}.\n\n"
+        f"SCRIPT:\n\"\"\"\n{narration}\n\"\"\""
+    )
+
+    try:
+        import anthropic as _anthropic
+        from app.core.config import settings as _s
+
+        client = _anthropic.Anthropic(api_key=_s.anthropic_api_key)
+        msg = client.messages.create(
+            model=_s.llm_model,
+            max_tokens=1500,
+            system=system,
+            messages=[{"role": "user", "content": instruction}],
+        )
+        out = (msg.content[0].text.strip() if msg.content else "") or ""
+        if len(out) >= 80:  # sanity: got a real prompt back
+            return out[:3800]
+    except Exception:
+        pass
+    return fallback or narration

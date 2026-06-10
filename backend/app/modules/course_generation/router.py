@@ -180,6 +180,33 @@ def get_lesson_video(
     return FileResponse(str(path), media_type="video/mp4")
 
 
+@router.get("/courses/{course_id}/lessons/{lesson_id}/quiz")
+def get_lesson_quiz(
+    course_id: int, lesson_id: int, lang: str = "en", db: Session = Depends(get_db)
+):
+    """Return MCQ + True/False questions for a lesson video, with timestamps.
+
+    Frontend pauses the video at each `timestamp`, shows the question, accepts the
+    answer, then compares against `correct_index`. Returns an empty list if the
+    lesson has no questions — never an error.
+
+    Response: {"questions": [
+        {"kind": "mcq"|"true_false", "timestamp": float, "question": str,
+         "options": [str], "correct_index": int, "explanation": str}, ...
+    ]}
+    """
+    import json as _json
+
+    # Quiz sidecar is written next to the video by the whiteboard renderer.
+    quiz_path = Path("media") / "whiteboard" / str(lesson_id) / f"{lang}.quiz.json"
+    if quiz_path.exists():
+        try:
+            return {"questions": _json.loads(quiz_path.read_text(encoding="utf-8"))}
+        except Exception:
+            pass
+    return {"questions": []}
+
+
 @router.get("/languages")
 def list_languages():
     """List supported TTS languages with which engine handles each."""
