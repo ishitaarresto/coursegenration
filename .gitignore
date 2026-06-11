@@ -1,0 +1,38 @@
+﻿# Environment
+.env
+.env.*
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+
+# Databases & vector stores
+*.db
+*.db-shm
+*.db-wal
+chroma_db*/
+
+# Runtime data files
+uploads/
+media/
+course_scripts/
+course_scripts_bak/
+jobs.json
+video_renders.json
+tutor_sessions.json
+
+# Flutter build output
+frontend/build/
+
+# The old combined LMS app — stays on machine, never pushed
+LMSarresto1/
+
+# Misc
+*.log
+.DS_Store
+Thumbs.db
+Roadmap.docx

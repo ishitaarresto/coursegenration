@@ -1,0 +1,32 @@
+version: '3.8'
+
+# Arresto LMS — Docker Compose
+#
+# Quick start (PostgreSQL only):
+#   docker-compose up -d
+#   # Then set in .env:  DATABASE_URL=postgresql://postgres:postgres@localhost:5432/arresto_lms
+#   python run_api.py
+#
+# The database data is persisted in the 'postgres_data' volume.
+# To reset the database: docker-compose down -v
+
+services:
+  postgres:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: arresto_lms
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:

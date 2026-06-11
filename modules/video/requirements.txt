@@ -1,0 +1,22 @@
+# modules/video — video rendering pipeline dependencies
+#
+# Install with:
+#   pip install -r modules/video/requirements.txt
+#   playwright install chromium       ← headless browser for animation recording
+#
+# ffmpeg must also be installed and on PATH (or in a known location).
+#   Windows: winget install Gyan.FFmpeg   OR   choco install ffmpeg
+#   Mac:     brew install ffmpeg
+#   Linux:   sudo apt install ffmpeg
+
+# Free TTS — Microsoft Edge neural voices, 70+ languages
+edge-tts>=7.0.2
+
+# Headless browser for recording animated HTML → WebM
+playwright>=1.50.0
+
+# HTTP client for Sarvam TTS and HeyGen API calls
+httpx>=0.27.0
+
+# Async file I/O (used by tts helpers)
+aiofiles>=24.1.0
