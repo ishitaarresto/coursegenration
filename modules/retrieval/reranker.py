@@ -13,6 +13,9 @@ Model:     cross-encoder/ms-marco-MiniLM-L-6-v2  (~67 MB, free, local)
 Latency:   ~150-200ms for 20 candidates on CPU
 """
 from __future__ import annotations
+import logging
+
+logger = logging.getLogger("arresto.retrieval.reranker")
 
 _DEFAULT_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
 
@@ -33,9 +36,9 @@ class Reranker:
                 "Reranker requires 'sentence-transformers'.\n"
                 "Install with:  pip install sentence-transformers"
             ) from exc
-        print(f"[reranker] Loading '{self._model_name}' ...")
+        logger.info("Loading '%s' ...", self._model_name)
         self._model = CrossEncoder(self._model_name)
-        print("[reranker] Ready.")
+        logger.info("Ready.")
 
     def rerank(
         self,

@@ -12,6 +12,9 @@ caller (tutor router, progress tracker) requires zero modifications.
 """
 
 from __future__ import annotations
+import logging
+
+logger = logging.getLogger("arresto.tutor.session_store")
 
 import json
 import time
@@ -129,7 +132,7 @@ class TutorSessionStore:
                 for row in db.query(TutorSessionRow).all():
                     self._sessions[row.session_id] = self._row_to_session(row)
         except Exception as exc:
-            print(f"[session_store] WARNING: could not load from DB: {exc}")
+            logger.warning("Could not load sessions from DB: %s", exc)
 
     # -- Persistence -----------------------------------------------------------
 
@@ -163,7 +166,7 @@ class TutorSessionStore:
                 row.checkpoint_answers_json       = json.dumps(s.checkpoint_answers)
                 db.commit()
         except Exception as exc:
-            print(f"[session_store] WARNING: could not persist session: {exc}")
+            logger.warning("Could not persist session to DB: %s", exc)
 
     # -- Public API ------------------------------------------------------------
 

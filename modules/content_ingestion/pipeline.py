@@ -16,6 +16,9 @@ Every step after Extract is optional; pass None to skip it.
 """
 
 from __future__ import annotations
+import logging
+
+logger = logging.getLogger("arresto.pipeline")
 
 from typing import TYPE_CHECKING
 
@@ -73,7 +76,7 @@ class IngestionPipeline:
         # -- 5  Chunk ----------------------------------------------------------
         if self._chunker is not None:
             chunks = self._chunker.chunk(content)
-            print(f"[pipeline] {asset.original_filename} -> {len(chunks)} chunks")
+            logger.info("%s -> %d chunks", asset.original_filename, len(chunks))
 
             # -- 6  Embed ------------------------------------------------------
             if self._embedder is not None:

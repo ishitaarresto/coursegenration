@@ -14,6 +14,9 @@ the vector dimension changed from 384 to 1024.
 """
 
 from __future__ import annotations
+import logging
+
+logger = logging.getLogger("arresto.embedder")
 
 from typing import TYPE_CHECKING
 
@@ -40,10 +43,10 @@ class Embedder:
                 "Embedding requires 'sentence-transformers'.\n"
                 "Install with:  pip install sentence-transformers"
             ) from exc
-        print(f"[embedder] Loading '{self.model_name}' ...")
+        logger.info("Loading '%s' ...", self.model_name)
         self._model = SentenceTransformer(self.model_name)
         dim = self._model.get_sentence_embedding_dimension()
-        print(f"[embedder] Ready -- embedding dimension: {dim}")
+        logger.info("Ready -- embedding dimension: %d", dim)
 
     @property
     def dimension(self) -> int:
@@ -70,9 +73,9 @@ class Embedder:
         """Embed every chunk in place; returns the same list with .embedding set."""
         if not chunks:
             return chunks
-        print(f"[embedder] Embedding {len(chunks)} chunks ...")
+        logger.info("Embedding %d chunks ...", len(chunks))
         vectors = self.embed_texts([c.text for c in chunks])
         for chunk, vec in zip(chunks, vectors):
             chunk.embedding = vec
-        print(f"[embedder] Done.")
+        logger.info("Done.")
         return chunks

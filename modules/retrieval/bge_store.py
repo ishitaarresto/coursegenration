@@ -10,6 +10,9 @@ When new documents are uploaded they will need to be dual-indexed here too —
 that wiring comes later in the ingestion pipeline.
 """
 from __future__ import annotations
+import logging
+
+logger = logging.getLogger("arresto.retrieval.bge")
 
 from pathlib import Path
 
@@ -27,7 +30,7 @@ class BGEVectorStore:
             name=_COLLECTION,
             metadata={"hnsw:space": "cosine"},
         )
-        print(f"[bge_store] '{_COLLECTION}' ready — {self._col.count()} chunks.")
+        logger.info("'%s' ready — %d chunks.", _COLLECTION, self._col.count())
 
     def query(
         self,

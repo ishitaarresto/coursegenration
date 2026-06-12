@@ -68,6 +68,9 @@ ACCURACY NOTES
 """
 
 from __future__ import annotations
+import logging
+
+logger = logging.getLogger("arresto.ocr")
 
 import io
 
@@ -119,7 +122,7 @@ class OCREngine:
             import pytesseract
             pytesseract.get_tesseract_version()   # raises if binary not found
             self._backend = "tesseract"
-            print("[ocr] Engine: Tesseract")
+            logger.info("Engine: Tesseract")
             return
         except Exception:
             pass
@@ -127,11 +130,11 @@ class OCREngine:
         # 2. Try EasyOCR
         try:
             import easyocr  # noqa: F401
-            print("[ocr] Loading EasyOCR models (first run downloads ~200 MB) ...")
+            logger.info("Loading EasyOCR models (first run downloads ~200 MB) ...")
             import easyocr as _easyocr
             self._reader  = _easyocr.Reader([self._easyocr_lang], verbose=False)
             self._backend = "easyocr"
-            print("[ocr] Engine: EasyOCR")
+            logger.info("Engine: EasyOCR")
             return
         except ImportError:
             pass
@@ -166,7 +169,7 @@ class OCREngine:
             else:
                 return self._run_easyocr(img)
         except Exception as exc:
-            print(f"[ocr] Warning: OCR failed on page -- {exc}")
+            logger.warning("OCR failed on page: %s", exc)
             return ""
 
     # -- Backends -------------------------------------------------------------

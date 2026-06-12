@@ -8,6 +8,9 @@ Responsibilities:
 """
 
 from __future__ import annotations
+import logging
+
+logger = logging.getLogger("arresto.tutor.engine")
 
 import json
 import random
@@ -401,7 +404,7 @@ Return a JSON array — no other text:
             questions_data = json.loads(text)
         except Exception as api_err:
             # Fall back to script-based generation (no API credits needed)
-            print(f"[tutor] API quiz generation failed ({api_err}), falling back to script-based quiz.")
+            logger.warning("API quiz generation failed (%s), falling back to script-based quiz.", api_err)
             questions_data = _generate_quiz_from_lesson(
                 [lesson] if lesson else [], num_questions, "manual"
             )
@@ -530,7 +533,7 @@ Return a JSON array — no other text:
                 text  = text[start:end]
             questions_data = json.loads(text)
         except Exception as api_err:
-            print(f"[tutor] API checkpoint quiz failed ({api_err}), falling back to script-based quiz.")
+            logger.warning("API checkpoint quiz failed (%s), falling back to script-based quiz.", api_err)
             source_lessons = (
                 module.get("lessons", []) if quiz_type == "module_checkpoint" and module else
                 ([lesson] if lesson else [])

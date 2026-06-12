@@ -46,6 +46,9 @@ from __future__ import annotations
 import json
 import os
 import re
+import logging
+
+logger = logging.getLogger("arresto.course_generator")
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Callable
 
@@ -161,7 +164,7 @@ class CourseScript:
     def save(self, path: str) -> None:
         with open(path, "w", encoding="utf-8") as f:
             json.dump(self.to_dict(), f, indent=2, ensure_ascii=False)
-        print(f"[course_generator] Course script saved -> {path}")
+        logger.info("Course script saved -> %s", path)
 
     def summary(self) -> str:
         lines = [
@@ -233,7 +236,7 @@ class CourseGenerator:
         use_knowledge_base : if True, lesson context search spans all docs in the store
         """
         instructions = self._sanitize_instructions(instructions)
-        print(f"[course_generator] Fetching chunks for '{source_file}' ...")
+        logger.info("Fetching chunks for '%s' ...", source_file)
         chunks = self._store.get_all_by_source(source_file)
         if not chunks:
             raise ValueError(
@@ -245,22 +248,20 @@ class CourseGenerator:
             f"[{c['metadata'].get('section_heading', '')}]\n{c['text']}"
             for c in chunks
         )
-        print(f"[course_generator] {len(chunks)} chunks loaded "
-              f"({len(full_content)} chars).")
+        logger.info("%d chunks loaded (%d chars).", len(chunks), len(full_content))
         if use_knowledge_base:
-            print("[course_generator] Knowledge base mode ON -- lesson context will draw from all documents.")
+            logger.info("Knowledge base mode ON -- lesson context will draw from all documents.")
 
         # Step 1 -- analyse
-        print("[course_generator] Step 1/3: Analysing content ...")
+        logger.info("Step 1/3: Analysing content ...")
         analysis = self._analyse(full_content, source_file, target_audience, instructions)
 
         # Step 2 -- outline
-        print("[course_generator] Step 2/3: Building course outline ...")
+        logger.info("Step 2/3: Building course outline ...")
         outline = self._outline(analysis, course_title or analysis.get("suggested_title", source_file), target_audience, instructions)
 
         # Step 3 -- script each lesson
-        print(f"[course_generator] Step 3/3: Scripting "
-              f"{sum(len(m['lessons']) for m in outline['modules'])} lessons ...")
+        logger.info("Step 3/3: Scripting %d lessons ...", sum(len(m['lessons']) for m in outline['modules']))
         modules = self._script_all(
             outline, full_content, target_audience, source_file,
             progress_callback, instructions, use_knowledge_base,
@@ -311,7 +312,7 @@ class CourseGenerator:
           ]
         """
         instructions = self._sanitize_instructions(instructions)
-        print(f"[course_generator] [custom] Fetching chunks for '{source_file}' ...")
+        logger.info("[custom] Fetching chunks for '%s' ...", source_file)
         chunks = self._store.get_all_by_source(source_file)
         if not chunks:
             raise ValueError(
@@ -323,8 +324,7 @@ class CourseGenerator:
             f"[{c['metadata'].get('section_heading', '')}]\n{c['text']}"
             for c in chunks
         )
-        print(f"[course_generator] [custom] {len(chunks)} chunks loaded "
-              f"({len(full_content)} chars). Generating from blueprint ...")
+        logger.info("[custom] %d chunks loaded (%d chars). Generating from blueprint ...", len(chunks), len(full_content))
 
         # Build the prompt — double-braces to escape literals inside f-string
         prompt = f"""You are an expert instructional designer.
@@ -435,14 +435,12 @@ Rules:
         Used automatically when content_text contains [MCQ], [FLASHCARD], or [TRUE/FALSE]
         markers — bypasses the module/lesson pipeline entirely.
         """
-        print(f"[course_generator] [text→micro] Single-call micro-course "
-              f"({len(content_text)} chars) ...")
+        logger.info("[text->micro] Single-call micro-course (%d chars) ...", len(content_text))
 
         if len(content_text) > 9000:
-            print(
-                f"[course_generator] WARNING: content_text truncated from "
-                f"{len(content_text)} to 9000 chars for micro-course generation. "
-                "Pass a shorter source or split into multiple courses."
+            logger.warning(
+                "content_text truncated from %d to 9000 chars for micro-course generation.",
+                len(content_text),
             )
         _content = content_text[:9000]
 
@@ -544,15 +542,14 @@ Return ONLY a valid JSON object — no markdown fences, no commentary:
         mode='detailed' → full outline (2-4 modules, 2-4 lessons each)
         """
         source_name = "inline_content"
-        print(f"[course_generator] [text] Generating from pasted text "
-              f"({len(content_text)} chars, mode={mode}) ...")
+        logger.info("[text] Generating from pasted text (%d chars, mode=%s) ...", len(content_text), mode)
 
         # Step 1 -- analyse
-        print("[course_generator] [text] Step 1/3: Analysing ...")
+        logger.info("[text] Step 1/3: Analysing ...")
         analysis = self._analyse(content_text, source_name, target_audience)
 
         # Step 2 -- outline
-        print("[course_generator] [text] Step 2/3: Building outline ...")
+        logger.info("[text] Step 2/3: Building outline ...")
         outline = self._outline(
             analysis,
             course_title or analysis.get("suggested_title", "Course"),
@@ -566,7 +563,7 @@ Return ONLY a valid JSON object — no markdown fences, no commentary:
                 m["lessons"] = m["lessons"][:2]
 
         total_lessons = sum(len(m["lessons"]) for m in outline["modules"])
-        print(f"[course_generator] [text] Step 3/3: Scripting {total_lessons} lessons ...")
+        logger.info("[text] Step 3/3: Scripting %d lessons ...", total_lessons)
 
         # Step 3 -- script each lesson, bypassing vector store
         self._inline_text = content_text
@@ -600,9 +597,9 @@ Return ONLY a valid JSON object — no markdown fences, no commentary:
             return text
         text = cls._CTRL_CHAR_RE.sub("", text)
         if len(text) > cls._MAX_INSTRUCTIONS:
-            print(
-                f"[course_generator] WARNING: instructions truncated from "
-                f"{len(text)} to {cls._MAX_INSTRUCTIONS} chars."
+            logger.warning(
+                "instructions truncated from %d to %d chars.",
+                len(text), cls._MAX_INSTRUCTIONS,
             )
             text = text[: cls._MAX_INSTRUCTIONS]
         return text.strip() or None
@@ -812,8 +809,7 @@ Return ONLY the JSON.
                 done += 1
                 if progress_callback:
                     progress_callback(done, total)
-                print(f"  [ok] ({done}/{total}) "
-                      f"{mod['module_title']} > {les['lesson_title']}")
+                logger.info("  [ok] (%d/%d) %s > %s", done, total, mod['module_title'], les['lesson_title'])
             modules_out.append(ModuleScript(
                 module_number=mod["module_number"],
                 module_title=mod["module_title"],

@@ -13,6 +13,9 @@ Collection name: lms_chunks_bge_m3 (1024-dim; previously lms_chunks at 384-dim).
 """
 
 from __future__ import annotations
+import logging
+
+logger = logging.getLogger("arresto.vector_store")
 
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -40,8 +43,7 @@ class VectorStore:
             name=_COLLECTION,
             metadata={"hnsw:space": "cosine"},
         )
-        print(f"[vector_store] Collection '{_COLLECTION}' ready -- "
-              f"{self._col.count()} chunks already stored.")
+        logger.info("Collection '%s' ready -- %d chunks already stored.", _COLLECTION, self._col.count())
 
     def _reconnect(self) -> None:
         """Re-fetch the collection handle when it becomes stale.
@@ -55,8 +57,7 @@ class VectorStore:
             name=_COLLECTION,
             metadata={"hnsw:space": "cosine"},
         )
-        print(f"[vector_store] Reconnected to '{_COLLECTION}' "
-              f"({self._col.count()} chunks).")
+        logger.info("Reconnected to '%s' (%d chunks).", _COLLECTION, self._col.count())
 
     def _col_op(self, fn):
         """Call fn(col), retrying once after reconnect on NotFoundError."""
@@ -93,8 +94,7 @@ class VectorStore:
             documents=[c.text for c in chunks],
             metadatas=metadatas,
         ))
-        print(f"[vector_store] Upserted {len(chunks)} chunks. "
-              f"Total in DB: {self.count()}")
+        logger.info("Upserted %d chunks. Total in DB: %d", len(chunks), self.count())
 
     def delete_by_source(self, source_file: str) -> None:
         """Remove all chunks belonging to a given source file."""

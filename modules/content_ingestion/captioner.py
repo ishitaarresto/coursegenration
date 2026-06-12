@@ -31,6 +31,9 @@ Dependencies (in requirements.txt):
 """
 
 from __future__ import annotations
+import logging
+
+logger = logging.getLogger("arresto.captioner")
 
 import io
 from typing import TYPE_CHECKING
@@ -73,8 +76,8 @@ class ImageCaptioner:
         # float16 only on CUDA -- CPU must stay float32
         dtype = torch.float16 if device == "cuda" else torch.float32
 
-        print(f"[captioner] Loading '{self.model_id}' on {device} (~6 GB) ...")
-        print(f"[captioner] CPU inference: ~30-120 s per image. GPU: ~1-3 s.")
+        logger.info("Loading '%s' on %s (~6 GB) ...", self.model_id, device)
+        logger.info("CPU inference: ~30-120 s per image. GPU: ~1-3 s.")
 
         self._processor = Blip2Processor.from_pretrained(self.model_id)
         self._model = Blip2ForConditionalGeneration.from_pretrained(
@@ -83,7 +86,7 @@ class ImageCaptioner:
         ).to(device)
         self._model.eval()
         self._device = device
-        print("[captioner] BLIP-2 ready.")
+        logger.info("BLIP-2 ready.")
 
     # -- Single-image caption ---------------------------------------------------
 
@@ -113,7 +116,7 @@ class ImageCaptioner:
             )[0].strip()
             return caption
         except Exception as exc:
-            print(f"[captioner] warning: {exc}")
+            logger.warning("Caption failed: %s", exc)
             return ""
 
     # -- Full-content captioning ------------------------------------------------
@@ -143,27 +146,27 @@ class ImageCaptioner:
         for page in content.pages:
             if not page.images:
                 continue
-            print(f"[captioner] PDF page {page.page_number}: {len(page.images)} image(s)")
+            logger.info("PDF page %d: %d image(s)", page.page_number, len(page.images))
             for img in page.images:
                 img.caption = self.caption(img.image_bytes)
-                print(f"  image {img.index} -> {img.caption or '(skipped)'}")
+                logger.debug("  image %d -> %s", img.index, img.caption or "(skipped)")
             page.raw_text = self._inject(page.raw_text, page.images)
 
     def _caption_slides(self, content: "ExtractedContent") -> None:
         for slide in content.slides:
             if not slide.images:
                 continue
-            print(f"[captioner] PPTX slide {slide.slide_number}: {len(slide.images)} image(s)")
+            logger.info("PPTX slide %d: %d image(s)", slide.slide_number, len(slide.images))
             for img in slide.images:
                 img.caption = self.caption(img.image_bytes)
-                print(f"  image {img.index} -> {img.caption or '(skipped)'}")
+                logger.debug("  image %d -> %s", img.index, img.caption or "(skipped)")
             slide.raw_text = self._inject(slide.raw_text, slide.images)
 
     def _caption_docx(self, content: "ExtractedContent") -> None:
         if not content.images:
             return
-        print(f"[captioner] DOCX: {len(content.images)} image(s)")
+        logger.info("DOCX: %d image(s)", len(content.images))
         for img in content.images:
             img.caption = self.caption(img.image_bytes)
-            print(f"  image {img.index} -> {img.caption or '(skipped)'}")
+            logger.debug("  image %d -> %s", img.index, img.caption or "(skipped)")
         content.full_text = self._inject(content.full_text, content.images)

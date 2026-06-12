@@ -18,6 +18,9 @@ Usage:
     # result.intent, result.language, result.chunks (list of top-5 dicts)
 """
 from __future__ import annotations
+import logging
+
+logger = logging.getLogger("arresto.retrieval.pipeline")
 
 from dataclasses import dataclass, field
 
@@ -60,18 +63,18 @@ class RetrievalPipeline:
         self._enable_reranking = enable_reranking
 
         # Phase 1 — bge-m3 vector store
-        print("[retrieval] Opening bge-m3 ChromaDB ...")
+        logger.info("Opening bge-m3 ChromaDB ...")
         self._bge_store = BGEVectorStore(persist_dir=bge_db_dir)
 
         # Phase 1 — bge-m3 embedding model
-        print("[retrieval] Loading bge-m3 (cached after first download) ...")
+        logger.info("Loading bge-m3 (cached after first download) ...")
         from sentence_transformers import SentenceTransformer
         self._st_model = SentenceTransformer("BAAI/bge-m3")
         dim = self._st_model.get_sentence_embedding_dimension()
-        print(f"[retrieval] bge-m3 ready — dim={dim}")
+        logger.info("bge-m3 ready — dim=%d", dim)
 
         # Phase 2 — BM25 sparse index (built once from all stored chunks)
-        print("[retrieval] Building BM25 index ...")
+        logger.info("Building BM25 index ...")
         self._bm25 = BM25Index()
         all_chunks = self._bge_store.get_all()
         self._bm25.build(all_chunks)
@@ -87,10 +90,10 @@ class RetrievalPipeline:
         self._reranker = Reranker() if enable_reranking else None
 
         # Phases 4 & 5 — Query processor (intent + rewriting via Claude Haiku)
-        print("[retrieval] Query processor ready (Claude Haiku).")
+        logger.info("Query processor ready (Claude Haiku).")
         self._processor = QueryProcessor(api_key=api_key, model=haiku_model)
 
-        print(f"[retrieval] Pipeline ready — {self._bge_store.count()} chunks indexed.")
+        logger.info("Pipeline ready — %d chunks indexed.", self._bge_store.count())
 
     # -- Internal embed helper passed to HybridSearcher --------------------------
 
@@ -112,7 +115,7 @@ class RetrievalPipeline:
         if not chunks:
             return
 
-        print(f"[retrieval] Dual-indexing {len(chunks)} chunks into bge-m3 store ...")
+        logger.info("Dual-indexing %d chunks into bge-m3 store ...", len(chunks))
         texts      = [c.text for c in chunks]
         embeddings = self._st_model.encode(
             texts, convert_to_numpy=True, show_progress_bar=False, batch_size=32,
@@ -140,8 +143,7 @@ class RetrievalPipeline:
         # stays in sync with every chunk now in the BGE store.
         all_chunks = self._bge_store.get_all()
         self._bm25.build(all_chunks)
-        print(f"[retrieval] Dual-index done. BGE store: {self._bge_store.count()} chunks, "
-              f"BM25: {len(all_chunks)} docs.")
+        logger.info("Dual-index done. BGE store: %d chunks, BM25: %d docs.", self._bge_store.count(), len(all_chunks))
 
     def delete_source(self, source_file: str) -> None:
         """
@@ -151,8 +153,7 @@ class RetrievalPipeline:
         self._bge_store.delete_by_source(source_file)
         all_chunks = self._bge_store.get_all()
         self._bm25.build(all_chunks)
-        print(f"[retrieval] '{source_file}' removed from BGE store. "
-              f"BM25 rebuilt — {len(all_chunks)} chunks remain.")
+        logger.info("'%s' removed from BGE store. BM25 rebuilt — %d chunks remain.", source_file, len(all_chunks))
 
     # -- Public API ---------------------------------------------------------------
 

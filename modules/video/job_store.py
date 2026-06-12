@@ -6,6 +6,9 @@ The VideoRenderJob dataclass and VideoJobStore public API are unchanged.
 """
 
 from __future__ import annotations
+import logging
+
+logger = logging.getLogger("arresto.video.job_store")
 
 import time
 import uuid
@@ -47,7 +50,7 @@ class VideoJobStore:
                 for row in db.query(VideoRenderRow).all():
                     self._jobs[row.render_id] = self._row_to_job(row)
         except Exception as exc:
-            print(f"[video_job_store] WARNING: could not load from DB: {exc}")
+            logger.warning("Could not load video jobs from DB: %s", exc)
 
     # -- Persistence -----------------------------------------------------------
 
@@ -72,7 +75,7 @@ class VideoJobStore:
                 row.finished_at = job.finished_at
                 db.commit()
         except Exception as exc:
-            print(f"[video_job_store] WARNING: could not persist render job: {exc}")
+            logger.warning("Could not persist render job to DB: %s", exc)
 
     # -- Public API ------------------------------------------------------------
 

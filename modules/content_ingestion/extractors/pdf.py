@@ -15,8 +15,11 @@ OCR is opt-in (enable_ocr=False by default) to keep fast ingestion for
 the common case of digital PDFs.
 """
 
+import logging
+
 import fitz  # PyMuPDF
 
+logger = logging.getLogger("arresto.extractors.pdf")
 from modules.content_ingestion.extractors.base import BaseExtractor
 from modules.content_ingestion.models import (
     Asset, AssetType, ExtractedContent, ExtractedImage, ExtractedPage,
@@ -88,8 +91,7 @@ class PdfExtractor(BaseExtractor):
                     text = ocr_text          # plain OCR text, no [OCR page N] tag
                     page_is_ocr = True
                     ocr_pages.append(page_obj.number + 1)
-                    print(f"[pdf_extractor] Page {page_obj.number + 1}: "
-                          f"OCR extracted {len(ocr_text)} chars")
+                    logger.info("Page %d: OCR extracted %d chars", page_obj.number + 1, len(ocr_text))
 
             # -- Embedded image extraction ------------------------------------
             page_images: list[ExtractedImage] = []

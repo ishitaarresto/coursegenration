@@ -11,6 +11,9 @@ significantly improves recall for technical queries without slowing things down.
 Requires:  pip install rank-bm25
 """
 from __future__ import annotations
+import logging
+
+logger = logging.getLogger("arresto.retrieval.bm25")
 
 import re
 
@@ -43,7 +46,7 @@ class BM25Index:
         self._corpus_texts = [c["text"]       for c in chunks]
         tokenized          = [_tokenize(t) for t in self._corpus_texts]
         self._bm25         = BM25Okapi(tokenized)
-        print(f"[bm25] Index built — {len(self._corpus_ids)} documents.")
+        logger.info("BM25 index built — %d documents.", len(self._corpus_ids))
 
     def search(
         self,
