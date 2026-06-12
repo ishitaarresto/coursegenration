@@ -10,7 +10,6 @@ from api.models.courses import CourseScriptRow
 from api.models.sessions import TutorSessionRow
 from api.models.renders import VideoRenderRow
 from api.models.progress import LessonRecordRow, QuizAttemptRow, WeakTopicRow
-from api.models.compat import CompatIdRow, CompatCounterRow
 
 __all__ = [
     "UploadJobRow",
@@ -21,6 +20,4 @@ __all__ = [
     "LessonRecordRow",
     "QuizAttemptRow",
     "WeakTopicRow",
-    "CompatIdRow",
-    "CompatCounterRow",
 ]

@@ -23,16 +23,19 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import logging
 import re
-import sys
 import time
 import uuid
+
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from fastapi.responses import FileResponse
+
+logger = logging.getLogger("arresto.audio")
 
 from api.config import settings
 from api.course_library import library
@@ -216,29 +219,21 @@ def _sync_prewarm(job: _AudioJob, lessons: list[tuple[int, int, str]], engine: A
             continue
 
         try:
-            print(
-                f"[tts] Pre-warm m{mod_num}_l{les_num} ({len(narration)} chars) ...",
-                flush=True,
-            )
+            logger.info("Pre-warm m%d_l%d (%d chars) ...", mod_num, les_num, len(narration))
             audio_bytes = engine.synthesize_bytes(narration)
             _write_cache(out_path, audio_bytes, narration)
-            print(
-                f"[tts]   -> {out_path.name} ({out_path.stat().st_size // 1024} KB)",
-                flush=True,
-            )
+            logger.info("  -> %s (%d KB)", out_path.name, out_path.stat().st_size // 1024)
         except Exception as exc:
             err = f"m{mod_num}_l{les_num}: {exc}"
             job.errors.append(err)
-            print(f"[tts] ERROR {err}", file=sys.stderr, flush=True)
+            logger.error("Pre-warm failed: %s", err)
 
         job.completed_lessons += 1
 
     job.status = "completed" if not job.errors else "completed_with_errors"
-    print(
-        f"[tts] Pre-warm done for '{job.script_id}' "
-        f"({job.completed_lessons}/{job.total_lessons} lessons, "
-        f"{len(job.errors)} errors).",
-        flush=True,
+    logger.info(
+        "Pre-warm done for '%s' (%d/%d lessons, %d errors)",
+        job.script_id, job.completed_lessons, job.total_lessons, len(job.errors),
     )
 
 
@@ -290,20 +285,14 @@ async def stream_lesson_audio(
     if not _is_cache_valid(mp3_path, narration):
         tts_engine = _get_tts_engine(request)
         try:
-            print(
-                f"[tts] On-demand: m{module_num}_l{lesson_num} "
-                f"({len(narration)} chars) ...",
-                flush=True,
+            logger.info(
+                "On-demand TTS: m%d_l%d (%d chars) ...", module_num, lesson_num, len(narration)
             )
             audio_bytes = await asyncio.to_thread(
                 tts_engine.synthesize_bytes, narration
             )
             await asyncio.to_thread(_write_cache, mp3_path, audio_bytes, narration)
-            print(
-                f"[tts]   -> cached {mp3_path.name} "
-                f"({mp3_path.stat().st_size // 1024} KB)",
-                flush=True,
-            )
+            logger.info("  -> cached %s (%d KB)", mp3_path.name, mp3_path.stat().st_size // 1024)
         except Exception as exc:
             raise HTTPException(
                 status_code=500,

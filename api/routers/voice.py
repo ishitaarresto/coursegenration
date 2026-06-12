@@ -22,11 +22,14 @@ with audio_id: null — the frontend can fall back to displaying the text.
 from __future__ import annotations
 
 import asyncio
+import logging
 import time
 import uuid
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import Response
+
+logger = logging.getLogger("arresto.voice")
 
 from api.dependencies import (
     get_embedder,
@@ -146,7 +149,7 @@ async def voice_chat(
             audio_id = str(uuid.uuid4())
             _voice_audio[audio_id] = (reply_audio, time.time())
         except Exception as exc:
-            print(f"[voice] WARNING: TTS synthesis failed: {exc}", flush=True)
+            logger.warning("TTS synthesis failed: %s", exc)
 
     return VoiceChatResponse(
         session_id=session_id,
