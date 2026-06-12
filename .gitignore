@@ -31,9 +31,13 @@ frontend/build/ios/
 frontend/build/linux/
 frontend/build/macos/
 frontend/build/windows/
-
-# The old combined LMS app — stays on machine, never pushed
-LMSarresto1/
+LMSarresto1/lmsarresto/build/android/
+LMSarresto1/lmsarresto/build/ios/
+LMSarresto1/lmsarresto/build/linux/
+LMSarresto1/lmsarresto/build/macos/
+LMSarresto1/lmsarresto/build/windows/
+LMSarresto1/lmsarresto/.dart_tool/
+LMSarresto1/lmsarresto/.idea/
 
 # Misc
 *.log

@@ -201,7 +201,7 @@ def health():
 # -- Flutter web (must be last — StaticFiles("/") is a catch-all) ---------------
 _FLUTTER_WEB = (
     Path(__file__).resolve().parent.parent
-    / "frontend" / "build" / "web"
+    / "LMSarresto1" / "lmsarresto" / "build" / "web"
 )
 
 _NO_CACHE = {"Cache-Control": "no-store, no-cache, must-revalidate"}

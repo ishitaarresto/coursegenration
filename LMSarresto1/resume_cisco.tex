@@ -1,0 +1,188 @@
+\documentclass[a4paper,10.5pt]{article}
+
+\usepackage[empty]{fullpage}
+\usepackage{titlesec}
+\usepackage{enumitem}
+\usepackage[hidelinks]{hyperref}
+\usepackage{tabularx}
+\usepackage{geometry}
+\usepackage{xcolor}
+
+\geometry{top=0.40in, bottom=0.40in, left=0.50in, right=0.50in}
+
+\definecolor{accent}{RGB}{20,40,100}
+\definecolor{linkblue}{RGB}{0,70,180}
+\definecolor{ruleblue}{RGB}{37,99,235}
+
+\hypersetup{
+  colorlinks=true,
+  urlcolor=linkblue,
+  linkcolor=linkblue
+}
+
+\setlength{\parindent}{0pt}
+\pagestyle{empty}
+\setlength{\tabcolsep}{0in}
+
+\titleformat{\section}{\large\bfseries\color{accent}}{}{0em}{}[\color{ruleblue}\titlerule]
+\titlespacing*{\section}{0pt}{7pt}{4pt}
+
+\setlist[itemize]{noitemsep, topsep=1pt, leftmargin=*, label=\textbullet}
+
+\newcommand{\resumeSubheading}[4]{%
+  \noindent\textbf{\color{accent}#1} \hfill \textbf{\small#2} \\
+  \noindent\textit{\small\color{gray}#3} \hfill \textit{\small\color{gray}#4} \vspace{2pt}%
+}
+
+\newcommand{\resumeItem}[1]{\item\small #1}
+
+\begin{document}
+
+%================ HEADER ================
+\begin{center}
+  {\fontsize{22}{26}\selectfont \textbf{\color{accent}Ishita Singh}}\\[3pt]
+  {\small Software Engineer \,\textbar\, Full-Stack \& Distributed Systems \,\textbar\, Applied AI}\\[5pt]
+  {\small
+    +91-9817409208
+    \,\textbar\,
+    \href{mailto:singhish0304@gmail.com}{singhish0304@gmail.com}
+    \,\textbar\,
+    \href{https://linkedin.com/in/ishita-singh-7b98752aa}{LinkedIn}
+    \,\textbar\,
+    \href{https://github.com/Ishita-coder27}{GitHub}
+    \,\textbar\,
+    \href{https://portfolioo-jade-iota.vercel.app/}{Portfolio}
+    \,\textbar\,
+    Noida, India
+  }
+\end{center}
+
+\vspace{2pt}
+
+%================ SUMMARY ================
+\section*{Professional Summary}
+
+Pre-final year CSE student and full-stack software engineer with \textbf{3 internships and 5+ production projects} spanning real-time distributed systems, scalable web applications, and applied AI. Strong CS fundamentals --- \textbf{500+ DSA problems solved} with solid grounding in Data Structures, Algorithms, OOP, Operating Systems, DBMS, and Computer Networks. Proficient in \textbf{C++, Python, JavaScript, and SQL}. Selected for \textbf{Amazon ML Summer School 2025}. Passionate about building reliable, scalable, well-engineered software and learning new technologies quickly.
+
+%================ TECHNICAL SKILLS ================
+\section*{Technical Skills}
+
+\begin{tabular}{@{}p{0.20\linewidth} p{0.77\linewidth}@{}}
+\textbf{Languages:}        & C++, Python, JavaScript, SQL, Dart \\[2pt]
+\textbf{CS Fundamentals:}  & Data Structures \& Algorithms, OOP, Operating Systems, DBMS, Computer Networks, System Design \\[2pt]
+\textbf{Backend:}          & Node.js, Express.js, FastAPI, REST APIs, WebSockets, WebRTC, Socket.IO, JWT Auth \\[2pt]
+\textbf{Frontend:}         & React, Vite, Tailwind CSS, HTML/CSS \\[2pt]
+\textbf{Databases:}        & MongoDB, MySQL, PostgreSQL, Redis \\[2pt]
+\textbf{Systems Concepts:} & Distributed Systems, Concurrency, Caching, Load Balancing, Real-Time Communication \\[2pt]
+\textbf{Tools / DevOps:}   & Git \& GitHub, GitHub Actions, Docker, Linux, Postman, Vercel \\[2pt]
+\textbf{Applied AI:}       & LLM Integration, RAG, Prompt Engineering, Vector Databases, NLP (Python) \\
+\end{tabular}
+
+%================ EXPERIENCE ================
+\section*{Professional Experience}
+
+\resumeSubheading
+{Software Engineer Intern --- ISRPL \,\href{https://drive.google.com/file/d/18-IPNTV7WDPqWt1JuZBNGiwhsbWZ6-QL/view?usp=sharing}{\small[Certificate]}}{May 2025 -- Jul 2025}
+{Information Technology Department}{Noida, India}
+\begin{itemize}
+  \resumeItem{Architected and delivered a \textbf{Near Miss Reporting \& Investigation Management Web App} end-to-end, with \textbf{multi-role RBAC} across 5 roles (Initiator, HOD, Concerned Manager, Executor Manager, HSE Team).}
+  \resumeItem{Built backend \textbf{REST APIs} with role-gated endpoints, data-validation layers, and \textbf{SQL-based reporting pipelines}; designed normalized relational schemas for audit trails and compliance exports.}
+  \resumeItem{Developed interactive \textbf{dashboards and real-time investigation tracking} with automated status updates; reduced manual closure time by $\sim$\textbf{35\%}.}
+\end{itemize}
+
+\vspace{4pt}
+
+\resumeSubheading
+{Software Engineer Intern --- Arresto Solutions Pvt. Ltd.}{Apr 2026 -- Jun 2026}
+{Safety-Tech SaaS Startup \,|\, Remote}{Noida, India}
+\begin{itemize}
+  \resumeItem{Engineered backend services with \textbf{FastAPI (Python)} and a cross-platform \textbf{Flutter} frontend for an AI-powered LMS, exposing clean, well-structured REST APIs for real-time content generation.}
+  \resumeItem{Built a document-processing pipeline using \textbf{text extraction, embeddings, and a vector database} to automatically generate structured course content from raw source material.}
+  \resumeItem{Supported end-to-end testing, validation, and deployment of production modules used across enterprise clients; reduced manual content-authoring effort by $\sim$\textbf{40\%}.}
+\end{itemize}
+
+\vspace{4pt}
+
+\resumeSubheading
+{Web Development Intern --- EHS Safety Club \,\href{https://drive.google.com/file/d/1Qdter8Ndw98bpQBjL-DrfLcrUbw5Wf1_/view?usp=sharing}{\small[Certificate]}}{May 2024 -- Aug 2024}
+{Remote}{}
+\begin{itemize}
+  \resumeItem{Engineered reusable UI components and REST API integrations; reduced frontend load time by $\sim$\textbf{25\%} and shipped production-level features in an agile team.}
+\end{itemize}
+
+%================ PROJECTS ================
+\section*{Projects}
+
+%--- CodeVanta
+\noindent\textbf{\color{accent}CodeVanta --- Real-Time Collaborative Coding Platform}
+\hfill \emph{React.js, Node.js, MongoDB, Socket.IO, WebRTC}\\
+{\small
+  \href{https://github.com/Ishita-coder27/Codevanta}{GitHub}
+  \,\textbar\,
+  \href{https://codevanta-orcin.vercel.app/}{Live Demo}
+}
+\begin{itemize}
+  \resumeItem{Engineered a real-time collaborative coding platform with a \textbf{shared Monaco editor} and \textbf{live WebSocket synchronization}, handling concurrent multi-user edits with low-latency state sync.}
+  \resumeItem{Integrated \textbf{WebRTC peer-to-peer video}, a DSA problem bank, and session history for pair programming --- a strong exercise in real-time networking and concurrency.}
+\end{itemize}
+
+\vspace{4pt}
+
+%--- VOCA AI
+\noindent\textbf{\color{accent}VOCA AI --- Mock Interview Platform}
+\hfill \emph{React, Node.js, Express.js, MongoDB, Voice AI}\\
+{\small
+  \href{https://github.com/Ishita-coder27/ai-interviewer}{GitHub}
+  \,\textbar\,
+  \href{https://mockinterviewerai.netlify.app/}{Live Demo}
+  \,\textbar\,
+  \href{https://drive.google.com/file/d/1p491yWfbeOLaWvnOIkI6u5gXdy28YbZl/view?usp=sharing}{Project Doc}
+}
+\begin{itemize}
+  \resumeItem{Built a full-stack interview platform with voice-based interaction and automated response evaluation, real-time scoring, and analytics across role-specific question banks (Frontend, Backend, DSA, System Design, HR).}
+  \resumeItem{Designed the backend with Express REST APIs and MongoDB; integrated LLM-driven adaptive question sequencing and communication analysis (filler-word detection, pacing).}
+\end{itemize}
+
+\vspace{4pt}
+
+%--- Acadence
+\noindent\textbf{\color{accent}Acadence --- Full-Stack E-Learning Platform}
+\hfill \emph{React, Node.js, MongoDB, Google Gemini AI}\\
+{\small
+  \href{https://github.com/Ishita-coder27/acadence2.0}{GitHub}
+  \,\textbar\,
+  \href{https://acadence-dashboard-9b46.vercel.app}{Live Demo}
+}
+\begin{itemize}
+  \resumeItem{Built a full-stack LMS with \textbf{JWT authentication}, gamification (streaks, badges, progress analytics), responsive dashboards, and AI-powered course generation via the Gemini API.}
+  \resumeItem{Designed RESTful backend services and MongoDB schemas; enforced consistent structured (JSON) responses across the application.}
+\end{itemize}
+
+\vspace{4pt}
+
+%--- Heallio
+\noindent\textbf{\color{accent}Heallio --- Health Intelligence Platform}
+\hfill \emph{React, FastAPI, PostgreSQL, Python}\\
+{\small{Work in progress}}
+\begin{itemize}
+  \resumeItem{Built a full-stack health platform with \textbf{FastAPI + PostgreSQL}, designing a token-efficient data pipeline that reduced external API cost by $\sim$\textbf{60\%} and improved response latency.}
+  \resumeItem{Implemented a modular extraction component (Regex + LLM fallback) with Pydantic-validated schemas and clean, reusable API interfaces.}
+\end{itemize}
+
+%================ EDUCATION ================
+\section*{Education}
+
+\resumeSubheading
+{Jaypee Institute of Information Technology, Noida}{Jul 2023 -- Jun 2027}
+{B.Tech in Computer Science \& Engineering}{GPA: 8.04 / 10}
+
+%================ ACHIEVEMENTS ================
+\section*{Achievements \& Certifications}
+
+\begin{itemize}
+  \resumeItem{Solved \textbf{500+ DSA problems} across graphs, dynamic programming, greedy, and hashing (LeetCode / Codeforces) --- strong algorithmic, problem-solving, and time-space optimization foundation.}
+  \resumeItem{\textbf{Amazon ML Summer School 2025} \href{https://drive.google.com/file/d/1T9mSpv0DFmDpvxUingbAiahDqWr-zmf4/view?usp=sharing}{\small[Certificate]} --- Selected among top applicants nationwide for an advanced curriculum covering supervised/unsupervised learning, deep learning, and NLP.}
+  \resumeItem{Consistent focus on \textbf{production-grade engineering}: modular architecture, clean REST API design, system-level thinking, and code quality across all projects and internships.}
+\end{itemize}
+
+\end{document}

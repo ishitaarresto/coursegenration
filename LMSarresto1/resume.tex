@@ -1,0 +1,186 @@
+\documentclass[a4paper,10.5pt]{article}
+
+\usepackage[empty]{fullpage}
+\usepackage{titlesec}
+\usepackage{enumitem}
+\usepackage[hidelinks]{hyperref}
+\usepackage{tabularx}
+\usepackage{geometry}
+\usepackage{xcolor}
+
+\geometry{top=0.40in, bottom=0.40in, left=0.50in, right=0.50in}
+
+\definecolor{accent}{RGB}{20,40,100}
+\definecolor{linkblue}{RGB}{0,70,180}
+\definecolor{ruleblue}{RGB}{37,99,235}
+
+\hypersetup{
+  colorlinks=true,
+  urlcolor=linkblue,
+  linkcolor=linkblue
+}
+
+\setlength{\parindent}{0pt}
+\pagestyle{empty}
+\setlength{\tabcolsep}{0in}
+
+\titleformat{\section}{\large\bfseries\color{accent}}{}{0em}{}[\color{ruleblue}\titlerule]
+\titlespacing*{\section}{0pt}{7pt}{4pt}
+
+\setlist[itemize]{noitemsep, topsep=1pt, leftmargin=*, label=\textbullet}
+
+\newcommand{\resumeSubheading}[4]{%
+  \noindent\textbf{\color{accent}#1} \hfill \textbf{\small#2} \\
+  \noindent\textit{\small\color{gray}#3} \hfill \textit{\small\color{gray}#4} \vspace{2pt}%
+}
+
+\newcommand{\resumeItem}[1]{\item\small #1}
+
+\begin{document}
+
+%================ HEADER ================
+\begin{center}
+  {\fontsize{22}{26}\selectfont \textbf{\color{accent}Ishita Singh}}\\[3pt]
+  {\small Prompt Engineer \,\textbar\, Generative AI \& NLP \,\textbar\, Full-Stack Developer}\\[5pt]
+  {\small
+    +91-9817409208
+    \,\textbar\,
+    \href{mailto:singhish0304@gmail.com}{singhish0304@gmail.com}
+    \,\textbar\,
+    \href{https://linkedin.com/in/ishita-singh-7b98752aa}{LinkedIn}
+    \,\textbar\,
+    \href{https://github.com/Ishita-coder27}{GitHub}
+    \,\textbar\,
+    \href{https://portfolioo-jade-iota.vercel.app/}{Portfolio}
+    \,\textbar\,
+    Noida, India
+  }
+\end{center}
+
+\vspace{2pt}
+
+%================ SUMMARY ================
+\section*{Professional Summary}
+
+Pre-final year CSE student specializing in \textbf{Generative AI and Prompt Engineering}, with hands-on experience designing structured, multi-step prompts across \textbf{Claude, ChatGPT, and Google Gemini}. Built \textbf{5+ AI/NLP projects} spanning LLM orchestration, RAG, embeddings, and text extraction. Strong in \textbf{Python, SQL, and JavaScript} with a proven ability to break complex problems into clear, structured instructions. Selected for \textbf{Amazon ML Summer School 2025}. Curious, detail-oriented, and fast-learning, with strong written communication and research-synthesis skills.
+
+%================ TECHNICAL SKILLS ================
+\section*{Technical Skills}
+
+\begin{tabular}{@{}p{0.20\linewidth} p{0.77\linewidth}@{}}
+\textbf{Languages:}           & Python, SQL, JavaScript, C++, Dart \\[2pt]
+\textbf{GenAI \& Prompting:}  & Claude (Anthropic), ChatGPT / GPT-4, Google Gemini, Prompt Engineering, Few-Shot \& Chain-of-Thought Prompting, Structured / System Prompts, Prompt Chaining, LLM Orchestration (LangChain) \\[2pt]
+\textbf{AI / NLP:}            & RAG, Embeddings, Vector Databases (Pinecone, FAISS), Sentence-Transformers, Text Extraction, Semantic Search, Natural Language Processing \\[2pt]
+\textbf{Backend \& Tools:}    & FastAPI, REST APIs, Node.js, Pydantic, Git \& GitHub, Postman \\[2pt]
+\textbf{Databases:}          & MongoDB, MySQL, PostgreSQL \\[2pt]
+\textbf{Core Strengths:}      & Technical Writing, Logical Reasoning, Problem Decomposition, Research \& Information Synthesis, Attention to Detail \\
+\end{tabular}
+
+%================ EXPERIENCE ================
+\section*{Professional Experience}
+
+\resumeSubheading
+{AI Engineer Intern --- Arresto Solutions Pvt. Ltd.}{Apr 2026 -- Jun 2026}
+{Safety-Tech SaaS Startup \,|\, Remote}{Noida, India}
+\begin{itemize}
+  \resumeItem{Engineered \textbf{prompt-engineering pipelines} for an AI-powered \textbf{LMS that automatically generates animated courses} from raw documents --- designing structured, multi-step prompts (built using \textbf{Claude Code}) that convert extracted text into lesson scripts, quizzes, and scene-level animation instructions.}
+  \resumeItem{Built a \textbf{RAG pipeline} using \textbf{text extraction, sentence-transformer embeddings, and a vector database} to ground course generation in source material --- improving content relevance and reducing hallucinations.}
+  \resumeItem{Developed the backend with \textbf{FastAPI (Python)} and a cross-platform \textbf{Flutter} frontend, exposing the generation workflow through clean, structured APIs for real-time course creation.}
+  \resumeItem{Iteratively tested and refined prompts to improve output consistency, accuracy, and formatting --- reducing manual content-authoring effort by $\sim$\textbf{40\%}.}
+\end{itemize}
+
+\vspace{4pt}
+
+\resumeSubheading
+{Software Engineer Intern --- ISRPL \,\href{https://drive.google.com/file/d/18-IPNTV7WDPqWt1JuZBNGiwhsbWZ6-QL/view?usp=sharing}{\small[Certificate]}}{May 2025 -- Jul 2025}
+{Information Technology Department}{Noida, India}
+\begin{itemize}
+  \resumeItem{Integrated an \textbf{NLP / LLM-assisted module} that uses \textbf{structured prompts} to auto-summarize and categorize near-miss incident reports --- accelerating triage and routing reports to the correct role automatically.}
+  \resumeItem{Architected and delivered a \textbf{Near Miss Reporting \& Investigation Management Web App} end-to-end, with \textbf{multi-role RBAC} across 5 roles (Initiator, HOD, Concerned Manager, Executor Manager, HSE Team).}
+  \resumeItem{Built interactive \textbf{dashboards and real-time investigation tracking} with automated status updates, structured audit trails, and SQL-based reporting pipelines; reduced manual closure time by $\sim$\textbf{35\%}.}
+\end{itemize}
+
+\vspace{4pt}
+
+\resumeSubheading
+{Web Development Intern --- EHS Safety Club \,\href{https://drive.google.com/file/d/1Qdter8Ndw98bpQBjL-DrfLcrUbw5Wf1_/view?usp=sharing}{\small[Certificate]}}{May 2024 -- Aug 2024}
+{Remote}{}
+\begin{itemize}
+  \resumeItem{Engineered reusable UI components and REST API integrations; reduced frontend load time by $\sim$\textbf{25\%} and shipped production-level features in an agile team.}
+\end{itemize}
+
+%================ PROJECTS ================
+\section*{Projects}
+
+%--- Acadence
+\noindent\textbf{\color{accent}Acadence --- AI-Powered E-Learning Platform}
+\hfill \emph{React, Node.js, MongoDB, Google Gemini AI}\\
+{\small
+  \href{https://github.com/Ishita-coder27/acadence2.0}{GitHub}
+  \,\textbar\,
+  \href{https://acadence-dashboard-9b46.vercel.app}{Live Demo}
+}
+\begin{itemize}
+  \resumeItem{Built a full-stack LMS with \textbf{Gemini AI-powered course generation} --- personalized lessons, quizzes, and learning paths dynamically generated from learner goals via structured \textbf{prompt pipelines}.}
+  \resumeItem{Designed and iterated on prompts to enforce consistent JSON output structure, then layered gamification (streaks, badges, analytics) with JWT auth and responsive dashboards.}
+\end{itemize}
+
+\vspace{4pt}
+
+%--- VOCA AI
+\noindent\textbf{\color{accent}VOCA AI --- Agentic Mock Interview Platform}
+\hfill \emph{React, Node.js, Express.js, MongoDB, NLP, Voice AI}\\
+{\small
+  \href{https://github.com/Ishita-coder27/ai-interviewer}{GitHub}
+  \,\textbar\,
+  \href{https://mockinterviewerai.netlify.app/}{Live Demo}
+  \,\textbar\,
+  \href{https://drive.google.com/file/d/1p491yWfbeOLaWvnOIkI6u5gXdy28YbZl/view?usp=sharing}{Project Doc}
+}
+\begin{itemize}
+  \resumeItem{Built an \textbf{LLM-orchestrated interview platform} with voice-based NLP interaction and \textbf{prompt-driven adaptive question sequencing}, plus automated response evaluation with real-time scoring.}
+  \resumeItem{Engineered role-specific prompts (Frontend, Backend, Full Stack, DSA, System Design, HR) with \textbf{grounded answer evaluation against domain rubrics} and communication coaching (filler-word detection, pacing analysis).}
+\end{itemize}
+
+\vspace{4pt}
+
+%--- Heallio
+\noindent\textbf{\color{accent}Heallio --- AI Health Intelligence Platform}
+\hfill \emph{React, FastAPI, PostgreSQL, LLM (Groq)}\\
+{\small{Work in progress}}
+\begin{itemize}
+  \resumeItem{Built a full-stack health platform with a \textbf{token-efficient LLM pipeline} that retrieves structured vitals instead of full reports --- reducing API cost by $\sim$\textbf{60\%} and improving latency.}
+  \resumeItem{Designed a modular \textbf{Vital Extractor} using custom Regex + LLM fallback for fast extraction from real-world medical reports, eliminating token usage for most cases ($\sim$2000 tokens/report saved vs.\ LLM-only).}
+\end{itemize}
+
+\vspace{4pt}
+
+%--- CodeVanta
+\noindent\textbf{\color{accent}CodeVanta --- Real-Time Collaborative Coding Platform}
+\hfill \emph{React.js, Node.js, MongoDB, Socket.IO}\\
+{\small
+  \href{https://github.com/Ishita-coder27/Codevanta}{GitHub}
+  \,\textbar\,
+  \href{https://codevanta-orcin.vercel.app/}{Live Demo}
+}
+\begin{itemize}
+  \resumeItem{Engineered a real-time collaborative coding platform with a \textbf{shared Monaco editor}, live WebSocket sync, a DSA problem bank, and session history for pair programming.}
+\end{itemize}
+
+%================ EDUCATION ================
+\section*{Education}
+
+\resumeSubheading
+{Jaypee Institute of Information Technology, Noida}{Jul 2023 -- Jun 2027}
+{B.Tech in Computer Science \& Engineering}{GPA: 8.04 / 10}
+
+%================ ACHIEVEMENTS ================
+\section*{Achievements \& Certifications}
+
+\begin{itemize}
+  \resumeItem{\textbf{Amazon ML Summer School 2025} \href{https://drive.google.com/file/d/1T9mSpv0DFmDpvxUingbAiahDqWr-zmf4/view?usp=sharing}{\small[Certificate]} --- Selected among top applicants nationwide for an advanced ML curriculum covering supervised/unsupervised learning, deep learning, \textbf{NLP}, and responsible AI.}
+  \resumeItem{Solved \textbf{500+ DSA problems} across graphs, DP, greedy, and hashing (LeetCode / Codeforces) --- strong logical reasoning and analytical problem-solving foundation.}
+  \resumeItem{Active explorer of \textbf{emerging GenAI tools} (Claude, ChatGPT, Gemini) --- consistently applying prompt engineering and AI workflows across personal and production projects.}
+\end{itemize}
+
+\end{document}
