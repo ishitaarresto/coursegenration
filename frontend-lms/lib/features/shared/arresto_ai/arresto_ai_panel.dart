@@ -1,3 +1,6 @@
+import 'dart:async';
+import 'dart:html' as html;
+import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
@@ -33,7 +36,7 @@ class AiLessonContext {
   }
 }
 
-enum _Voice { idle, listening, processing, speaking }
+enum _Voice { idle, listening, transcribing, processing, speaking }
 
 class ArrestoAIPanel extends StatefulWidget {
   final String? seedQuestion;
@@ -55,7 +58,13 @@ class _ArrestoAIPanelState extends State<ArrestoAIPanel> {
   bool _sttReady = false;
   bool _sttDenied = false;
   bool _listening = false;
+  bool _sttProcessing = false;       // true while backend is transcribing
   String? _voiceError;
+
+  // ── Web MediaRecorder (used on web instead of speech_to_text) ──
+  html.MediaRecorder? _recorder;
+  html.MediaStream? _micStream;
+  final List<html.Blob> _audioChunks = [];
 
   // ── Voice: text-to-speech ──
   final FlutterTts _tts = FlutterTts();
@@ -66,6 +75,7 @@ class _ArrestoAIPanelState extends State<ArrestoAIPanel> {
 
   _Voice get _voiceState {
     if (_listening) return _Voice.listening;
+    if (_sttProcessing) return _Voice.transcribing;
     if (_typing) return _Voice.processing;
     if (_speaking) return _Voice.speaking;
     return _Voice.idle;
@@ -90,6 +100,8 @@ class _ArrestoAIPanelState extends State<ArrestoAIPanel> {
     _scrollController.dispose();
     _stt.cancel();
     _tts.stop();
+    _recorder?.stop();
+    _micStream?.getTracks().forEach((t) => t.stop());
     super.dispose();
   }
 
@@ -101,99 +113,195 @@ class _ArrestoAIPanelState extends State<ArrestoAIPanel> {
   }
 
   // ── Speech-to-text ──────────────────────────────────────────────────────────
-  Future<void> _initStt() async {
-    // Web Speech API only works over HTTPS or localhost.
-    // On plain HTTP (e.g. http://192.168.x.x), initialize() returns false.
+  //
+  // On web: uses MediaRecorder (browser API) → POSTs webm to backend Sarvam STT.
+  //         No Google servers, no VPN issues, works on any network.
+  // On mobile: keeps speech_to_text (native STT).
+
+  Future<void> _toggleListen() async {
+    _clearVoiceError();
+    if (kIsWeb) {
+      if (_listening) {
+        _stopWebRecording();
+      } else {
+        await _startWebRecording();
+      }
+    } else {
+      // Mobile path — native speech_to_text
+      if (_listening) {
+        await _stt.stop();
+        setState(() => _listening = false);
+        return;
+      }
+      if (!_sttReady) await _initSttMobile();
+      if (!_sttReady) {
+        setState(() => _voiceError = 'Speech recognition isn\'t available on this device.');
+        return;
+      }
+      await _stopSpeak();
+      _track('voice_listen_start');
+      setState(() => _listening = true);
+      await _stt.listen(
+        onResult: (SpeechRecognitionResult r) {
+          if (!mounted) return;
+          setState(() => _controller.text = r.recognizedWords);
+          if (r.finalResult) {
+            final text = r.recognizedWords.trim();
+            setState(() => _listening = false);
+            if (text.isNotEmpty) {
+              _track('voice_listen_result');
+              _send(text);
+              _controller.clear();
+            }
+          }
+        },
+        listenOptions: SpeechListenOptions(
+          listenFor: const Duration(seconds: 30),
+          pauseFor: const Duration(seconds: 4),
+          partialResults: true,
+          cancelOnError: false,
+        ),
+      );
+    }
+  }
+
+  // ── Web: MediaRecorder → Sarvam backend STT ─────────────────────────────────
+
+  Future<void> _startWebRecording() async {
+    _audioChunks.clear();
+    try {
+      final stream = await html.window.navigator.mediaDevices!
+          .getUserMedia({'audio': true, 'video': false});
+      _micStream = stream;
+
+      // Prefer opus/webm; fall back to browser default
+      final mimeType = html.MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+          ? 'audio/webm;codecs=opus'
+          : '';
+      final recorder = mimeType.isNotEmpty
+          ? html.MediaRecorder(stream, {'mimeType': mimeType})
+          : html.MediaRecorder(stream);
+      _recorder = recorder;
+
+      recorder.addEventListener('dataavailable', (event) {
+        final blob = (event as html.BlobEvent).data;
+        if (blob != null && blob.size > 0) _audioChunks.add(blob);
+      });
+
+      recorder.addEventListener('stop', (_) {
+        stream.getTracks().forEach((t) => t.stop());
+        _micStream = null;
+        _recorder = null;
+        if (_audioChunks.isNotEmpty) {
+          _transcribeChunks();
+        } else {
+          if (mounted) {
+            setState(() {
+              _sttProcessing = false;
+              _voiceError = 'No audio recorded. Hold the mic button while speaking.';
+            });
+          }
+        }
+      });
+
+      recorder.start();
+      await _stopSpeak();
+      _track('voice_listen_start');
+      if (mounted) setState(() => _listening = true);
+    } catch (e) {
+      final msg = e.toString().toLowerCase();
+      if (mounted) {
+        setState(() {
+          _sttDenied = msg.contains('permission') || msg.contains('denied') || msg.contains('notallowed');
+          _voiceError = _sttDenied
+              ? 'Microphone access denied. Click the lock icon in your browser address bar and allow microphone.'
+              : 'Could not start microphone. Please check your browser settings.';
+        });
+      }
+    }
+  }
+
+  void _stopWebRecording() {
+    if (_recorder != null) {
+      _recorder!.stop();
+      if (mounted) setState(() { _listening = false; _sttProcessing = true; });
+    }
+  }
+
+  Future<void> _transcribeChunks() async {
+    try {
+      // Merge all recorded chunks into one Blob
+      final blob = html.Blob(_audioChunks, 'audio/webm');
+      _audioChunks.clear();
+
+      // FileReader.readAsArrayBuffer returns a JS ArrayBuffer → ByteBuffer in Dart
+      final completer = Completer<Uint8List>();
+      final reader = html.FileReader();
+      reader.onLoad.listen((_) {
+        final buf = reader.result as ByteBuffer;
+        completer.complete(buf.asUint8List());
+      });
+      reader.onError.listen((_) {
+        completer.completeError('FileReader failed to read audio');
+      });
+      reader.readAsArrayBuffer(blob);
+      final bytes = await completer.future;
+
+      _track('voice_listen_result');
+      final text = await ChatService.transcribeAudio(bytes);
+
+      if (!mounted) return;
+      if (text.isEmpty) {
+        setState(() {
+          _sttProcessing = false;
+          _voiceError = 'Didn\'t catch that — please speak again.';
+        });
+      } else {
+        setState(() {
+          _sttProcessing = false;
+          _controller.text = text;
+        });
+        _send(text);
+        _controller.clear();
+      }
+    } catch (e) {
+      debugPrint('[STT] transcription error: $e');
+      if (!mounted) return;
+      setState(() {
+        _sttProcessing = false;
+        // Show the real error so it's visible during debugging
+        _voiceError = 'Transcription error: $e';
+      });
+    }
+  }
+
+  // ── Mobile: speech_to_text init ─────────────────────────────────────────────
+
+  Future<void> _initSttMobile() async {
     try {
       _sttReady = await _stt.initialize(
         onStatus: (status) {
           if (!mounted) return;
-          debugPrint('[STT] status: $status');
           if (status == 'done' || status == 'notListening') {
             setState(() => _listening = false);
           }
         },
         onError: (err) {
           if (!mounted) return;
-          debugPrint('[STT] error: ${err.errorMsg}');
           final msg = err.errorMsg.toLowerCase();
           setState(() {
             _listening = false;
             _sttDenied = msg.contains('denied') ||
                 msg.contains('not-allowed') ||
                 msg.contains('permission');
-            _voiceError = _friendlyMicError(err.errorMsg);
+            _voiceError = 'Voice input error: ${err.errorMsg}. Try again or type your question.';
           });
         },
       );
     } catch (e) {
-      debugPrint('[STT] init exception: $e');
       _sttReady = false;
     }
     if (mounted) setState(() {});
-  }
-
-  String _friendlyMicError(String raw) {
-    final lower = raw.toLowerCase();
-    if (lower.contains('denied') || lower.contains('not-allowed') || lower.contains('permission')) {
-      return 'Microphone access is blocked. Allow it in your browser\'s site settings, then retry.';
-    }
-    // "network" / "connection" errors: Chrome's Web Speech API sends audio to
-    // Google's servers. This fails when behind a VPN or on restricted networks
-    // (common in India). Disable VPN or switch to a different network to fix it.
-    if (lower.contains('network') || lower.contains('connection')) {
-      return 'Voice connection failed. Chrome Speech Recognition needs access to Google\'s servers — '
-          'disable VPN, check your internet, then retry. Or just type your question.';
-    }
-    if (lower.contains('no-speech') || lower.contains('nomatch')) {
-      return 'Didn\'t catch that — please speak again.';
-    }
-    if (lower.contains('service-not-allowed') || lower.contains('not-allowed')) {
-      return 'Speech service blocked. Open this app over HTTPS or localhost for voice to work.';
-    }
-    return 'Voice input isn\'t available right now. You can still type your question.';
-  }
-
-  Future<void> _toggleListen() async {
-    _clearVoiceError();
-    if (_listening) {
-      await _stt.stop();
-      setState(() => _listening = false);
-      return;
-    }
-    // Init on first mic tap (not at panel-open time) so the permission prompt
-    // fires in response to a clear user action.
-    if (!_sttReady) await _initStt();
-    if (!_sttReady) {
-      setState(() => _voiceError = kIsWeb
-          ? 'Speech recognition requires Chrome, Edge, or Safari on HTTPS/localhost.'
-          : 'Speech recognition isn\'t available on this device.');
-      return;
-    }
-    await _stopSpeak();
-    _track('voice_listen_start');
-    setState(() => _listening = true);
-    await _stt.listen(
-      onResult: (SpeechRecognitionResult r) {
-        if (!mounted) return;
-        setState(() => _controller.text = r.recognizedWords);
-        if (r.finalResult) {
-          final text = r.recognizedWords.trim();
-          setState(() => _listening = false);
-          if (text.isNotEmpty) {
-            _track('voice_listen_result');
-            _send(text);
-            _controller.clear();
-          }
-        }
-      },
-      listenOptions: SpeechListenOptions(
-        listenFor: const Duration(seconds: 30),
-        pauseFor: const Duration(seconds: 4),
-        partialResults: true,
-        cancelOnError: false,
-      ),
-    );
   }
 
   void _clearVoiceError() {
@@ -419,6 +527,7 @@ class _ArrestoAIPanelState extends State<ArrestoAIPanel> {
                 _MicButton(
                   listening: _listening,
                   disabled: _sttDenied,
+                  transcribing: _sttProcessing,
                   onTap: _toggleListen,
                 ),
                 const SizedBox(width: 8),
@@ -491,8 +600,9 @@ class _ArrestoAIPanelState extends State<ArrestoAIPanel> {
 class _MicButton extends StatefulWidget {
   final bool listening;
   final bool disabled;
+  final bool transcribing;
   final VoidCallback onTap;
-  const _MicButton({required this.listening, required this.disabled, required this.onTap});
+  const _MicButton({required this.listening, required this.disabled, required this.transcribing, required this.onTap});
 
   @override
   State<_MicButton> createState() => _MicButtonState();
@@ -511,14 +621,17 @@ class _MicButtonState extends State<_MicButton> with SingleTickerProviderStateMi
   @override
   Widget build(BuildContext context) {
     final listening = widget.listening;
+    final transcribing = widget.transcribing;
     return Tooltip(
       message: widget.disabled
           ? 'Microphone blocked — enable it in site settings'
-          : listening
-              ? 'Stop listening'
-              : 'Speak your question',
+          : transcribing
+              ? 'Transcribing…'
+              : listening
+                  ? 'Tap to stop recording'
+                  : 'Tap to speak',
       child: GestureDetector(
-        onTap: widget.onTap,
+        onTap: widget.disabled || transcribing ? null : widget.onTap,
         child: SizedBox(
           width: 44,
           height: 44,
@@ -547,21 +660,37 @@ class _MicButtonState extends State<_MicButton> with SingleTickerProviderStateMi
                   shape: BoxShape.circle,
                   color: widget.disabled
                       ? ArrestoColors.bg2
-                      : listening
-                          ? ArrestoColors.red
-                          : ArrestoColors.bg2,
+                      : transcribing
+                          ? ArrestoColors.orange.withValues(alpha: 0.12)
+                          : listening
+                              ? ArrestoColors.red
+                              : ArrestoColors.bg2,
                   border: Border.all(
-                      color: listening ? ArrestoColors.red : ArrestoColors.line),
+                    color: transcribing
+                        ? ArrestoColors.orange
+                        : listening
+                            ? ArrestoColors.red
+                            : ArrestoColors.line,
+                  ),
                 ),
-                child: Icon(
-                  widget.disabled
-                      ? Icons.mic_off_rounded
-                      : listening
-                          ? Icons.stop_rounded
-                          : Icons.mic_rounded,
-                  size: 20,
-                  color: listening ? Colors.white : ArrestoColors.textSecondary,
-                ),
+                child: transcribing
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: ArrestoColors.orange,
+                        ),
+                      )
+                    : Icon(
+                        widget.disabled
+                            ? Icons.mic_off_rounded
+                            : listening
+                                ? Icons.stop_rounded
+                                : Icons.mic_rounded,
+                        size: 20,
+                        color: listening ? Colors.white : ArrestoColors.textSecondary,
+                      ),
               ),
             ],
           ),
@@ -583,9 +712,14 @@ class _VoiceStatusBar extends StatelessWidget {
     late final Color color;
     switch (state) {
       case _Voice.listening:
-        label = 'Listening…';
+        label = 'Recording… tap mic to stop';
         icon = Icons.mic_rounded;
         color = ArrestoColors.red;
+        break;
+      case _Voice.transcribing:
+        label = 'Transcribing…';
+        icon = Icons.sync_rounded;
+        color = ArrestoColors.orange;
         break;
       case _Voice.processing:
         label = 'Processing…';
