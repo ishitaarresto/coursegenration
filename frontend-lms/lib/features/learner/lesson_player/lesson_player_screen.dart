@@ -12,6 +12,8 @@ import '../../../core/widgets/button.dart';
 import '../../../core/widgets/arresto_ai_logo.dart';
 import 'interactive_question.dart';
 import '../../../data/providers/app_state.dart';
+import '../../../data/providers/api_providers.dart';
+import '../../../core/services/course_service.dart';
 import '../../../data/models/lesson.dart' show CourseLesson;
 import '../../../data/models/course.dart';
 import '../../shared/arresto_ai/arresto_ai_panel.dart';
@@ -80,9 +82,9 @@ class _LessonPlayerScreenState extends ConsumerState<LessonPlayerScreen> {
   @override
   void initState() {
     super.initState();
-    final lessons = ref.read(lessonsProvider);
-    final lesson = _lesson(lessons);
-    if (lesson != null) _posSecs = lesson.savedPositionSecs;
+    // Try to restore saved position from mock data (real API doesn't store position yet)
+    final mockLesson = _lesson(ref.read(lessonsProvider));
+    if (mockLesson != null) _posSecs = mockLesson.savedPositionSecs;
     _track('lesson_open');
     _loadNotes();
   }
@@ -253,7 +255,10 @@ class _LessonPlayerScreenState extends ConsumerState<LessonPlayerScreen> {
 
   // ── AI companion ────────────────────────────────────────────────────────────
   void _openAI({String? seed}) {
-    final lessons = ref.read(lessonsProvider);
+    final apiLessons = ref.read(courseLessonsProvider(widget.courseId)).valueOrNull;
+    final lessons = (apiLessons != null && apiLessons.isNotEmpty)
+        ? apiLessons
+        : ref.read(lessonsProvider);
     final lesson = _lesson(lessons);
     _track('ai_open', {'seed': seed});
     showModalBottomSheet(
@@ -296,15 +301,39 @@ class _LessonPlayerScreenState extends ConsumerState<LessonPlayerScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final lessons = ref.watch(lessonsProvider);
-    final courses = ref.watch(coursesProvider);
+    // Use real API lessons; fall back to mock data for demo courses
+    final apiLessonsAsync = ref.watch(courseLessonsProvider(widget.courseId));
+    final mockLessons = ref.watch(lessonsProvider);
+
+    if (apiLessonsAsync.isLoading) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator(color: ArrestoColors.orange)),
+      );
+    }
+
+    final apiLessons = apiLessonsAsync.valueOrNull;
+    final lessons = (apiLessons != null && apiLessons.isNotEmpty)
+        ? apiLessons
+        : mockLessons;
+
     final lesson = _lesson(lessons);
     if (lesson == null) {
       return const Scaffold(body: Center(child: Text('Lesson not found')));
     }
 
-    final course =
-        courses.firstWhere((c) => c.id == widget.courseId, orElse: () => courses.first);
+    // Resolve course: try real API detail, fall back to mock list
+    final courseAsync = ref.watch(courseDetailProvider(widget.courseId));
+    final Course course;
+    if (courseAsync.valueOrNull != null) {
+      course = CourseService.courseFromDetail(courseAsync.value!);
+    } else {
+      final mockCourses = ref.watch(coursesProvider);
+      course = mockCourses.firstWhere(
+        (c) => c.id == widget.courseId,
+        orElse: () => mockCourses.first,
+      );
+    }
+
     final dur = lesson.durationSecs;
     final progress = dur > 0 ? _posSecs / dur : 0.0;
 
