@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:flutter_tts/flutter_tts.dart';
@@ -74,7 +75,8 @@ class _ArrestoAIPanelState extends State<ArrestoAIPanel> {
   void initState() {
     super.initState();
     _initTts();
-    _initStt();
+    // Defer STT init to first mic tap — requesting permission immediately on
+    // panel open can be blocked silently by some browsers.
     if (widget.seedQuestion != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _send(widget.seedQuestion!);
@@ -100,38 +102,56 @@ class _ArrestoAIPanelState extends State<ArrestoAIPanel> {
 
   // ── Speech-to-text ──────────────────────────────────────────────────────────
   Future<void> _initStt() async {
+    // Web Speech API only works over HTTPS or localhost.
+    // On plain HTTP (e.g. http://192.168.x.x), initialize() returns false.
     try {
       _sttReady = await _stt.initialize(
         onStatus: (status) {
           if (!mounted) return;
+          debugPrint('[STT] status: $status');
           if (status == 'done' || status == 'notListening') {
             setState(() => _listening = false);
           }
         },
         onError: (err) {
           if (!mounted) return;
+          debugPrint('[STT] error: ${err.errorMsg}');
+          final msg = err.errorMsg.toLowerCase();
           setState(() {
             _listening = false;
-            _sttDenied = err.errorMsg.contains('denied') ||
-                err.errorMsg.contains('not-allowed') ||
-                err.errorMsg.contains('permission');
+            _sttDenied = msg.contains('denied') ||
+                msg.contains('not-allowed') ||
+                msg.contains('permission');
             _voiceError = _friendlyMicError(err.errorMsg);
           });
         },
       );
-    } catch (_) {
+    } catch (e) {
+      debugPrint('[STT] init exception: $e');
       _sttReady = false;
     }
     if (mounted) setState(() {});
   }
 
   String _friendlyMicError(String raw) {
-    if (raw.contains('denied') || raw.contains('not-allowed') || raw.contains('permission')) {
+    final lower = raw.toLowerCase();
+    if (lower.contains('denied') || lower.contains('not-allowed') || lower.contains('permission')) {
       return 'Microphone access is blocked. Allow it in your browser\'s site settings, then retry.';
     }
-    if (raw.contains('network')) return 'Network issue reaching speech service. Check your connection.';
-    if (raw.contains('no-speech') || raw.contains('noMatch')) return 'Didn\'t catch that — try speaking again.';
-    return 'Voice input isn\'t available right now. You can still type.';
+    // "network" / "connection" errors: Chrome's Web Speech API sends audio to
+    // Google's servers. This fails when behind a VPN or on restricted networks
+    // (common in India). Disable VPN or switch to a different network to fix it.
+    if (lower.contains('network') || lower.contains('connection')) {
+      return 'Voice connection failed. Chrome Speech Recognition needs access to Google\'s servers — '
+          'disable VPN, check your internet, then retry. Or just type your question.';
+    }
+    if (lower.contains('no-speech') || lower.contains('nomatch')) {
+      return 'Didn\'t catch that — please speak again.';
+    }
+    if (lower.contains('service-not-allowed') || lower.contains('not-allowed')) {
+      return 'Speech service blocked. Open this app over HTTPS or localhost for voice to work.';
+    }
+    return 'Voice input isn\'t available right now. You can still type your question.';
   }
 
   Future<void> _toggleListen() async {
@@ -141,18 +161,19 @@ class _ArrestoAIPanelState extends State<ArrestoAIPanel> {
       setState(() => _listening = false);
       return;
     }
+    // Init on first mic tap (not at panel-open time) so the permission prompt
+    // fires in response to a clear user action.
     if (!_sttReady) await _initStt();
     if (!_sttReady) {
-      setState(() => _voiceError =
-          'Speech recognition isn\'t supported in this browser. Try Chrome, Edge, or Safari.');
+      setState(() => _voiceError = kIsWeb
+          ? 'Speech recognition requires Chrome, Edge, or Safari on HTTPS/localhost.'
+          : 'Speech recognition isn\'t available on this device.');
       return;
     }
     await _stopSpeak();
     _track('voice_listen_start');
     setState(() => _listening = true);
     await _stt.listen(
-      listenFor: const Duration(seconds: 30),
-      pauseFor: const Duration(seconds: 4),
       onResult: (SpeechRecognitionResult r) {
         if (!mounted) return;
         setState(() => _controller.text = r.recognizedWords);
@@ -166,6 +187,12 @@ class _ArrestoAIPanelState extends State<ArrestoAIPanel> {
           }
         }
       },
+      listenOptions: SpeechListenOptions(
+        listenFor: const Duration(seconds: 30),
+        pauseFor: const Duration(seconds: 4),
+        partialResults: true,
+        cancelOnError: false,
+      ),
     );
   }
 
@@ -175,7 +202,10 @@ class _ArrestoAIPanelState extends State<ArrestoAIPanel> {
 
   // ── Text-to-speech ──────────────────────────────────────────────────────────
   Future<void> _initTts() async {
-    await _tts.setSpeechRate(0.5);
+    // Language MUST be set before speak() on Chrome — without it, the browser
+    // can't select a voice and speak() fires silently with no audio.
+    await _tts.setLanguage('en-US');
+    await _tts.setSpeechRate(0.48);
     await _tts.setPitch(1.0);
     await _tts.setVolume(1.0);
     _tts.setCompletionHandler(() {
@@ -184,7 +214,8 @@ class _ArrestoAIPanelState extends State<ArrestoAIPanel> {
     _tts.setCancelHandler(() {
       if (mounted) setState(() { _speakingIndex = null; _paused = false; });
     });
-    _tts.setErrorHandler((_) {
+    _tts.setErrorHandler((e) {
+      debugPrint('[TTS] error: $e');
       if (mounted) setState(() { _speakingIndex = null; _paused = false; });
     });
   }
@@ -201,6 +232,10 @@ class _ArrestoAIPanelState extends State<ArrestoAIPanel> {
   Future<void> _speak(int index) async {
     if (_listening) await _stt.stop();
     await _tts.stop();
+    // Re-apply language before each speak call — on Chrome, voices load
+    // asynchronously so the first setLanguage() in initState may have found
+    // an empty voice list. By the time the user taps "Listen", voices are ready.
+    if (kIsWeb) await _tts.setLanguage('en-US');
     _track('voice_speak');
     setState(() { _speakingIndex = index; _paused = false; });
     await _tts.speak(_stripForSpeech(_messages[index].text));

@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_tts/flutter_tts.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -980,7 +982,7 @@ class _ResourcesTab extends StatelessWidget {
 }
 
 // ── Transcript tab ────────────────────────────────────────────────────────────
-class _TranscriptTab extends StatelessWidget {
+class _TranscriptTab extends StatefulWidget {
   final CourseLesson lesson;
   final int posSecs, activeIndex;
   final TextEditingController searchCtrl;
@@ -996,18 +998,128 @@ class _TranscriptTab extends StatelessWidget {
   });
 
   @override
+  State<_TranscriptTab> createState() => _TranscriptTabState();
+}
+
+class _TranscriptTabState extends State<_TranscriptTab> {
+  final FlutterTts _tts = FlutterTts();
+  bool _speaking = false;
+  bool _paused = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _tts.setLanguage('en-US');
+    _tts.setSpeechRate(0.48);
+    _tts.setPitch(1.0);
+    _tts.setVolume(1.0);
+    _tts.setCompletionHandler(() {
+      if (mounted) setState(() { _speaking = false; _paused = false; });
+    });
+    _tts.setCancelHandler(() {
+      if (mounted) setState(() { _speaking = false; _paused = false; });
+    });
+    _tts.setErrorHandler((_) {
+      if (mounted) setState(() { _speaking = false; _paused = false; });
+    });
+  }
+
+  @override
+  void dispose() {
+    _tts.stop();
+    super.dispose();
+  }
+
+  // Use real narration script if available; fall back to mock segments
+  String get _scriptText {
+    final script = widget.lesson.narrationScript;
+    if (script != null && script.isNotEmpty) return script;
+    return _transcriptSegments.map((s) => s.$2).join(' ');
+  }
+
+  Future<void> _toggleSpeak() async {
+    if (_speaking && !_paused) {
+      await _tts.pause();
+      if (mounted) setState(() => _paused = true);
+    } else {
+      // On web, pause/resume is unreliable — always restart from beginning
+      await _tts.stop();
+      if (kIsWeb) await _tts.setLanguage('en-US');
+      if (mounted) setState(() { _speaking = true; _paused = false; });
+      await _tts.speak(_scriptText);
+    }
+  }
+
+  Future<void> _stopSpeak() async {
+    await _tts.stop();
+    if (mounted) setState(() { _speaking = false; _paused = false; });
+  }
+
+  Widget _chip(IconData icon, String label, VoidCallback onTap, {Color? color}) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          color: (color ?? ArrestoColors.orange).withValues(alpha: 0.1),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: (color ?? ArrestoColors.orange).withValues(alpha: 0.4)),
+        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(icon, size: 14, color: color ?? ArrestoColors.orange),
+          const SizedBox(width: 5),
+          Text(label,
+              style: ArrestoText.xs(color: color ?? ArrestoColors.orange)
+                  .copyWith(fontWeight: FontWeight.w600)),
+        ]),
+      ),
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final q = query.toLowerCase();
+    final q = widget.query.toLowerCase();
+    final hasRealScript = widget.lesson.narrationScript?.isNotEmpty == true;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        // Header row with TTS controls
         Row(children: [
-          Expanded(child: Text('Transcript — ${lesson.title}', style: ArrestoText.bodyBold())),
+          Expanded(
+            child: Text('Transcript — ${widget.lesson.title}',
+                style: ArrestoText.bodyBold()),
+          ),
+          const SizedBox(width: 8),
+          if (!_speaking && !_paused)
+            _chip(Icons.volume_up_rounded, 'Listen', _toggleSpeak)
+          else ...[
+            _chip(
+              _paused ? Icons.play_arrow_rounded : Icons.pause_rounded,
+              _paused ? 'Resume' : 'Pause',
+              _toggleSpeak,
+            ),
+            const SizedBox(width: 6),
+            _chip(Icons.stop_rounded, 'Stop', _stopSpeak,
+                color: ArrestoColors.textSecondary),
+          ],
         ]),
+
+        if (_speaking)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Row(children: [
+              const Icon(Icons.volume_up_rounded, size: 13, color: ArrestoColors.orange),
+              const SizedBox(width: 5),
+              Text('Playing narration…',
+                  style: ArrestoText.xs(color: ArrestoColors.orange)),
+            ]),
+          ),
+
         const SizedBox(height: 10),
         TextField(
-          controller: searchCtrl,
-          onChanged: onSearch,
+          controller: widget.searchCtrl,
+          onChanged: widget.onSearch,
           decoration: const InputDecoration(
             isDense: true,
             prefixIcon: Icon(Icons.search_rounded, size: 18),
@@ -1015,45 +1127,78 @@ class _TranscriptTab extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 12),
-        ...List.generate(_transcriptSegments.length, (i) {
-          final seg = _transcriptSegments[i];
-          if (q.isNotEmpty && !seg.$2.toLowerCase().contains(q)) {
-            return const SizedBox.shrink();
-          }
-          final isActive = i == activeIndex;
-          return InkWell(
-            onTap: () => onSeek(seg.$1),
-            borderRadius: BorderRadius.circular(8),
-            child: Container(
-              margin: const EdgeInsets.only(bottom: 6),
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-              decoration: BoxDecoration(
-                color: isActive ? ArrestoColors.amberSoft : Colors.transparent,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(
-                  color: isActive ? ArrestoColors.amber.withValues(alpha: 0.5) : Colors.transparent,
-                ),
+
+        // Real narration script (full text block)
+        if (hasRealScript) ...[
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: _speaking ? ArrestoColors.amberSoft : ArrestoColors.bg2,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: _speaking
+                    ? ArrestoColors.amber.withValues(alpha: 0.5)
+                    : ArrestoColors.cardBorder,
               ),
-              child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                SizedBox(
-                  width: 40,
-                  child: Text(fmtSecs(seg.$1),
-                      style: ArrestoText.xs(
-                          color: isActive ? ArrestoColors.orange : ArrestoColors.textMuted)),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(seg.$2,
-                      style: isActive
-                          ? ArrestoText.body(color: ArrestoColors.ink).copyWith(fontWeight: FontWeight.w600)
-                          : ArrestoText.body()),
-                ),
-                if (isActive)
-                  const Icon(Icons.volume_up_rounded, size: 14, color: ArrestoColors.orange),
-              ]),
             ),
-          );
-        }),
+            child: SelectableText(
+              q.isEmpty
+                  ? widget.lesson.narrationScript!
+                  : widget.lesson.narrationScript!
+                      .split(' ')
+                      .where((w) => q.isEmpty || widget.lesson.narrationScript!.toLowerCase().contains(q))
+                      .join(' '),
+              style: ArrestoText.body(color: ArrestoColors.ink),
+            ),
+          ),
+        ] else ...[
+          // Fall back to timed mock segments
+          ...List.generate(_transcriptSegments.length, (i) {
+            final seg = _transcriptSegments[i];
+            if (q.isNotEmpty && !seg.$2.toLowerCase().contains(q)) {
+              return const SizedBox.shrink();
+            }
+            final isActive = i == widget.activeIndex;
+            return InkWell(
+              onTap: () => widget.onSeek(seg.$1),
+              borderRadius: BorderRadius.circular(8),
+              child: Container(
+                margin: const EdgeInsets.only(bottom: 6),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                decoration: BoxDecoration(
+                  color: isActive ? ArrestoColors.amberSoft : Colors.transparent,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: isActive
+                        ? ArrestoColors.amber.withValues(alpha: 0.5)
+                        : Colors.transparent,
+                  ),
+                ),
+                child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  SizedBox(
+                    width: 40,
+                    child: Text(widget.fmtSecs(seg.$1),
+                        style: ArrestoText.xs(
+                            color: isActive
+                                ? ArrestoColors.orange
+                                : ArrestoColors.textMuted)),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(seg.$2,
+                        style: isActive
+                            ? ArrestoText.body(color: ArrestoColors.ink)
+                                .copyWith(fontWeight: FontWeight.w600)
+                            : ArrestoText.body()),
+                  ),
+                  if (isActive)
+                    const Icon(Icons.volume_up_rounded,
+                        size: 14, color: ArrestoColors.orange),
+                ]),
+              ),
+            );
+          }),
+        ],
       ],
     );
   }
