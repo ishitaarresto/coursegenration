@@ -134,6 +134,8 @@ async def lifespan(app: FastAPI):
                 bge_db_dir=settings.chroma_db_dir_bge,
                 enable_reranking=settings.enable_reranking,
                 haiku_model=settings.haiku_model,
+                top_candidates=30,
+                top_final=8,
             )
         except Exception as exc:
             logger.warning("Retrieval pipeline failed to init: %s", exc)

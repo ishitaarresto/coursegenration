@@ -231,8 +231,21 @@ class _ArrestoAIPanelState extends State<ArrestoAIPanel> {
     });
     _scrollToBottom();
 
+    // Build conversation history from previous messages (last 6, before the one just added)
+    final prevMessages = _messages.sublist(0, _messages.length - 1);
+    final historyWindow = prevMessages.length > 6
+        ? prevMessages.sublist(prevMessages.length - 6)
+        : prevMessages;
+    final history = historyWindow
+        .map((m) => {'role': m.isUser ? 'user' : 'assistant', 'text': m.text})
+        .toList();
+
     try {
-      final answer = await ChatService.ask(text, lessonContext: widget.lessonContext);
+      final answer = await ChatService.ask(
+        text,
+        lessonContext: widget.lessonContext,
+        history: history,
+      );
       if (!mounted) return;
       setState(() {
         _typing = false;

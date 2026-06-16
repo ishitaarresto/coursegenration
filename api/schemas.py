@@ -89,6 +89,7 @@ class ChatRequest(BaseModel):
     source_file:        str | None = Field(None, description="Restrict to one document")
     asset_type:         str | None = Field(None, description="pdf | docx | pptx")
     n_chunks:           int        = Field(5, ge=1, le=50)
+    history:            list[dict] = Field(default_factory=list, description="Recent conversation turns [{'role': 'user'/'assistant', 'text': '...'}]")
     # Lesson context — sent from the in-lesson AI companion
     lesson_id:          str | None = Field(None, description="Lesson ID (e.g. 'm1l2')")
     course_id:          str | None = Field(None, description="Course script_id")
