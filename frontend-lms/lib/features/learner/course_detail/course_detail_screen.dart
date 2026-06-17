@@ -10,6 +10,7 @@ import '../../../core/widgets/progress_bar.dart';
 import '../../../core/widgets/course_thumb.dart';
 import '../../../core/services/course_service.dart';
 import '../../../data/providers/api_providers.dart';
+import '../../../data/providers/app_state.dart';
 import '../../../data/models/course.dart';
 import '../../../data/models/lesson.dart' show CourseLesson;
 
@@ -21,6 +22,8 @@ class CourseDetailScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final detailAsync = ref.watch(courseDetailProvider(id));
     final lessonsAsync = ref.watch(courseLessonsProvider(id));
+    final mockCourses = ref.watch(coursesProvider);
+    final mockLessons = ref.watch(lessonsProvider);
 
     return detailAsync.when(
       loading: () => Column(
@@ -58,8 +61,25 @@ class CourseDetailScreen extends ConsumerWidget {
         ],
       ),
       data: (detail) {
-        final course = CourseService.courseFromDetail(detail);
-        final courseLessons = lessonsAsync.valueOrNull ?? [];
+        // 404 → detail is empty; fall back to mock course data.
+        final Course course;
+        final List<CourseLesson> courseLessons;
+        if (detail.isEmpty) {
+          final mock = mockCourses.where((c) => c.id == id).firstOrNull;
+          if (mock == null) {
+            return Column(children: [
+              _appBar(context, ref, ''),
+              Expanded(child: Center(
+                child: Text('Course not found', style: ArrestoText.body()),
+              )),
+            ]);
+          }
+          course = mock;
+          courseLessons = mockLessons.where((l) => l.courseId == id).toList();
+        } else {
+          course = CourseService.courseFromDetail(detail);
+          courseLessons = lessonsAsync.valueOrNull ?? [];
+        }
         final resumeLesson = courseLessons.firstWhere(
           (l) => !l.completed,
           orElse: () => courseLessons.isNotEmpty

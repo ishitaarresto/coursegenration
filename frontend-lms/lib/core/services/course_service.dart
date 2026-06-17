@@ -1,3 +1,4 @@
+import 'package:dio/dio.dart';
 import '../../data/models/course.dart';
 import '../../core/widgets/course_thumb.dart';
 import 'api_client.dart';
@@ -46,11 +47,17 @@ class CourseService {
   }
 
   /// Fetch a full library entry including the complete course_script.
+  /// Returns an empty map when the course doesn't exist (404) so callers
+  /// can fall back to mock data without entering an error state.
   static Future<Map<String, dynamic>> getCourseDetail(
       String scriptId) async {
-    final resp =
-        await apiClient.get('/api/v1/courses/library/$scriptId');
-    return resp.data as Map<String, dynamic>;
+    try {
+      final resp = await apiClient.get('/api/v1/courses/library/$scriptId');
+      return resp.data as Map<String, dynamic>;
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 404) return {};
+      rethrow;
+    }
   }
 
   /// Rename a course. Fetches the existing script body first so the PATCH
