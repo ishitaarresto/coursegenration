@@ -5,10 +5,10 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
-import 'package:flutter_tts/flutter_tts.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 import 'package:speech_to_text/speech_recognition_result.dart';
 import '../../../core/services/chat_service.dart';
+import '../../../core/services/sarvam_tts_service.dart';
 import '../../../core/theme/colors.dart';
 import '../../../core/theme/typography.dart';
 import '../../../core/widgets/arresto_ai_logo.dart';
@@ -67,25 +67,30 @@ class _ArrestoAIPanelState extends State<ArrestoAIPanel> {
   html.MediaStream? _micStream;
   final List<html.Blob> _audioChunks = [];
 
-  // ── Voice: text-to-speech ──
-  final FlutterTts _tts = FlutterTts();
+  // ── Voice: text-to-speech (Sarvam backend) ──
+  final _tts = SarvamTtsPlayer();
   int? _speakingIndex;
-  bool _paused = false;
 
-  bool get _speaking => _speakingIndex != null && !_paused;
+  bool get _speaking => _speakingIndex != null && _tts.isSpeaking;
 
   _Voice get _voiceState {
     if (_listening) return _Voice.listening;
     if (_sttProcessing) return _Voice.transcribing;
     if (_typing) return _Voice.processing;
-    if (_speaking) return _Voice.speaking;
+    if (_tts.isActive) return _Voice.speaking;
     return _Voice.idle;
   }
 
   @override
   void initState() {
     super.initState();
-    _initTts();
+    _tts.onStateChange = () {
+      if (mounted) {
+        setState(() {
+          if (!_tts.isActive) _speakingIndex = null;
+        });
+      }
+    };
     // Defer STT init to first mic tap — requesting permission immediately on
     // panel open can be blocked silently by some browsers.
     if (widget.seedQuestion != null) {
@@ -100,7 +105,7 @@ class _ArrestoAIPanelState extends State<ArrestoAIPanel> {
     _controller.dispose();
     _scrollController.dispose();
     _stt.cancel();
-    _tts.stop();
+    _tts.dispose();
     _recorder?.stop();
     _micStream?.getTracks().forEach((t) => t.stop());
     super.dispose();
@@ -139,7 +144,7 @@ class _ArrestoAIPanelState extends State<ArrestoAIPanel> {
         setState(() => _voiceError = 'Speech recognition isn\'t available on this device.');
         return;
       }
-      await _stopSpeak();
+      _stopSpeak();
       _track('voice_listen_start');
       setState(() => _listening = true);
       await _stt.listen(
@@ -201,7 +206,7 @@ class _ArrestoAIPanelState extends State<ArrestoAIPanel> {
       // Timeslice 250 ms: dataavailable fires every 250 ms during recording,
       // guaranteeing chunks even for short recordings.
       recorder.start(250);
-      await _stopSpeak();
+      _stopSpeak();
       _track('voice_listen_start');
       if (mounted) setState(() => _listening = true);
     } catch (e) {
@@ -324,25 +329,7 @@ class _ArrestoAIPanelState extends State<ArrestoAIPanel> {
     if (_voiceError != null) setState(() => _voiceError = null);
   }
 
-  // ── Text-to-speech ──────────────────────────────────────────────────────────
-  Future<void> _initTts() async {
-    // Language MUST be set before speak() on Chrome — without it, the browser
-    // can't select a voice and speak() fires silently with no audio.
-    await _tts.setLanguage('en-US');
-    await _tts.setSpeechRate(0.48);
-    await _tts.setPitch(1.0);
-    await _tts.setVolume(1.0);
-    _tts.setCompletionHandler(() {
-      if (mounted) setState(() { _speakingIndex = null; _paused = false; });
-    });
-    _tts.setCancelHandler(() {
-      if (mounted) setState(() { _speakingIndex = null; _paused = false; });
-    });
-    _tts.setErrorHandler((e) {
-      debugPrint('[TTS] error: $e');
-      if (mounted) setState(() { _speakingIndex = null; _paused = false; });
-    });
-  }
+  // ── Text-to-speech (Sarvam backend via SarvamTtsPlayer) ────────────────────
 
   String _stripForSpeech(String md) => md
       .replaceAll('**', '')
@@ -353,31 +340,27 @@ class _ArrestoAIPanelState extends State<ArrestoAIPanel> {
       .replaceAll(RegExp(r'\s+'), ' ')
       .trim();
 
-  Future<void> _speak(int index) async {
-    if (_listening) await _stt.stop();
-    await _tts.stop();
-    // Re-apply language before each speak call — on Chrome, voices load
-    // asynchronously so the first setLanguage() in initState may have found
-    // an empty voice list. By the time the user taps "Listen", voices are ready.
-    if (kIsWeb) await _tts.setLanguage('en-US');
+  void _speak(int index) {
+    if (_listening) _stt.stop();
     _track('voice_speak');
-    setState(() { _speakingIndex = index; _paused = false; });
-    await _tts.speak(_stripForSpeech(_messages[index].text));
+    setState(() => _speakingIndex = index);
+    _tts.speak(_stripForSpeech(_messages[index].text)).catchError((e) {
+      debugPrint('[TTS] $e');
+      if (mounted) setState(() => _speakingIndex = null);
+    });
   }
 
-  Future<void> _pauseResume(int index) async {
-    if (_paused) {
-      setState(() => _paused = false);
-      await _tts.speak(_stripForSpeech(_messages[index].text));
+  void _pauseResume(int index) {
+    if (_tts.isPaused) {
+      _tts.resume();
     } else {
-      await _tts.pause();
-      setState(() => _paused = true);
+      _tts.pause();
     }
   }
 
-  Future<void> _stopSpeak() async {
-    await _tts.stop();
-    if (mounted) setState(() { _speakingIndex = null; _paused = false; });
+  void _stopSpeak() {
+    _tts.stop();
+    setState(() => _speakingIndex = null);
   }
 
   // ── Chat ────────────────────────────────────────────────────────────────────
@@ -518,8 +501,8 @@ class _ArrestoAIPanelState extends State<ArrestoAIPanel> {
                       return _MessageBubble(
                         msg: msg,
                         canSpeak: !msg.isUser,
-                        isSpeaking: _speakingIndex == i && !_paused,
-                        isPaused: _speakingIndex == i && _paused,
+                        isSpeaking: _speakingIndex == i && _tts.isSpeaking,
+                        isPaused: _speakingIndex == i && _tts.isPaused,
                         onSpeak: () => _speak(i),
                         onPauseResume: () => _pauseResume(i),
                         onStop: _stopSpeak,

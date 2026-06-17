@@ -28,7 +28,7 @@ from fastapi import Request
 from fastapi.responses import JSONResponse
 
 from api.config import settings
-from api.routers import documents, chat, courses, tutor, progress, audio, voice, video, questions
+from api.routers import documents, chat, courses, tutor, progress, audio, voice, video, questions, tts
 from api.schemas import HealthResponse
 
 # -- Logging setup --------------------------------------------------------------
@@ -200,6 +200,7 @@ app.include_router(audio.router)
 app.include_router(voice.router)
 app.include_router(video.router)
 app.include_router(questions.router)
+app.include_router(tts.router)
 
 
 # -- Global exception handler ---------------------------------------------------

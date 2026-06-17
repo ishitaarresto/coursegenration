@@ -1,9 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_tts/flutter_tts.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -16,6 +14,7 @@ import 'interactive_question.dart';
 import '../../../data/providers/app_state.dart';
 import '../../../data/providers/api_providers.dart';
 import '../../../core/services/course_service.dart';
+import '../../../core/services/sarvam_tts_service.dart';
 import '../../../data/models/lesson.dart' show CourseLesson;
 import '../../../data/models/course.dart';
 import '../../shared/arresto_ai/arresto_ai_panel.dart';
@@ -1002,31 +1001,17 @@ class _TranscriptTab extends StatefulWidget {
 }
 
 class _TranscriptTabState extends State<_TranscriptTab> {
-  final FlutterTts _tts = FlutterTts();
-  bool _speaking = false;
-  bool _paused = false;
+  final _tts = SarvamTtsPlayer();
 
   @override
   void initState() {
     super.initState();
-    _tts.setLanguage('en-US');
-    _tts.setSpeechRate(0.48);
-    _tts.setPitch(1.0);
-    _tts.setVolume(1.0);
-    _tts.setCompletionHandler(() {
-      if (mounted) setState(() { _speaking = false; _paused = false; });
-    });
-    _tts.setCancelHandler(() {
-      if (mounted) setState(() { _speaking = false; _paused = false; });
-    });
-    _tts.setErrorHandler((_) {
-      if (mounted) setState(() { _speaking = false; _paused = false; });
-    });
+    _tts.onStateChange = () { if (mounted) setState(() {}); };
   }
 
   @override
   void dispose() {
-    _tts.stop();
+    _tts.dispose();
     super.dispose();
   }
 
@@ -1036,25 +1021,19 @@ class _TranscriptTabState extends State<_TranscriptTab> {
     return script;
   }
 
-  Future<void> _toggleSpeak() async {
+  void _toggleSpeak() {
     final text = _scriptText;
     if (text == null) return;
-    if (_speaking && !_paused) {
-      await _tts.pause();
-      if (mounted) setState(() => _paused = true);
+    if (_tts.isSpeaking) {
+      _tts.pause();
+    } else if (_tts.isPaused) {
+      _tts.resume();
     } else {
-      // On web, pause/resume is unreliable — always restart from beginning
-      await _tts.stop();
-      if (kIsWeb) await _tts.setLanguage('en-US');
-      if (mounted) setState(() { _speaking = true; _paused = false; });
-      await _tts.speak(text);
+      _tts.speak(text).catchError((e) => debugPrint('[TTS] $e'));
     }
   }
 
-  Future<void> _stopSpeak() async {
-    await _tts.stop();
-    if (mounted) setState(() { _speaking = false; _paused = false; });
-  }
+  void _stopSpeak() => _tts.stop();
 
   Widget _chip(IconData icon, String label, VoidCallback onTap, {Color? color}) {
     return GestureDetector(
@@ -1101,13 +1080,17 @@ class _TranscriptTabState extends State<_TranscriptTab> {
               Text('No audio script',
                   style: ArrestoText.xs(color: ArrestoColors.textMuted)),
             ])
-          else if (!_speaking && !_paused)
+          else if (!_tts.isActive)
             _chip(Icons.volume_up_rounded, 'Listen', _toggleSpeak)
           else ...[
             _chip(
-              _paused ? Icons.play_arrow_rounded : Icons.pause_rounded,
-              _paused ? 'Resume' : 'Pause',
-              _toggleSpeak,
+              _tts.isLoading
+                  ? Icons.hourglass_empty_rounded
+                  : _tts.isPaused
+                      ? Icons.play_arrow_rounded
+                      : Icons.pause_rounded,
+              _tts.isLoading ? 'Loading…' : _tts.isPaused ? 'Resume' : 'Pause',
+              _tts.isLoading ? () {} : _toggleSpeak,
             ),
             const SizedBox(width: 6),
             _chip(Icons.stop_rounded, 'Stop', _stopSpeak,
@@ -1115,7 +1098,7 @@ class _TranscriptTabState extends State<_TranscriptTab> {
           ],
         ]),
 
-        if (_speaking)
+        if (_tts.isSpeaking)
           Padding(
             padding: const EdgeInsets.only(top: 6),
             child: Row(children: [
@@ -1143,10 +1126,10 @@ class _TranscriptTabState extends State<_TranscriptTab> {
           Container(
             padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
-              color: _speaking ? ArrestoColors.amberSoft : ArrestoColors.bg2,
+              color: _tts.isSpeaking ? ArrestoColors.amberSoft : ArrestoColors.bg2,
               borderRadius: BorderRadius.circular(10),
               border: Border.all(
-                color: _speaking
+                color: _tts.isSpeaking
                     ? ArrestoColors.amber.withValues(alpha: 0.5)
                     : ArrestoColors.cardBorder,
               ),
