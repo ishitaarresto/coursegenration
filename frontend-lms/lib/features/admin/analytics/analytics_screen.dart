@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../core/services/analytics_service.dart';
 import '../../../core/theme/colors.dart';
 import '../../../core/theme/typography.dart';
 import '../../../core/theme/spacing.dart';
@@ -7,6 +9,7 @@ import '../../../core/widgets/arresto_card.dart';
 import '../../../core/widgets/chip_group.dart';
 import '../../../core/widgets/stat_card.dart';
 import '../../../core/widgets/section_header.dart';
+import '../../../data/providers/api_providers.dart';
 
 class AnalyticsScreen extends StatefulWidget {
   const AnalyticsScreen({super.key});
@@ -60,9 +63,11 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   }
 }
 
-class _GenerationTab extends StatelessWidget {
+class _GenerationTab extends ConsumerWidget {
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final overview = ref.watch(analyticsOverviewProvider).valueOrNull;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -75,46 +80,46 @@ class _GenerationTab extends StatelessWidget {
             crossAxisSpacing: 12,
             mainAxisSpacing: 12,
             childAspectRatio: 1.6,
-            children: const [
+            children: [
               StatCard(
                 title: 'Courses Generated',
-                value: '142',
+                value: overview != null ? '${overview.totalCourses}' : '—',
                 icon: Icons.auto_awesome_rounded,
                 barColor: ArrestoColors.orange,
                 iconColor: ArrestoColors.orange,
               ),
               StatCard(
                 title: 'Videos Created',
-                value: '968',
+                value: overview != null ? '${overview.totalVideos}' : '—',
                 icon: Icons.videocam_rounded,
                 barColor: ArrestoColors.blue,
                 iconColor: ArrestoColors.blue,
               ),
               StatCard(
-                title: 'Learning Hours',
-                value: '312h',
-                icon: Icons.schedule_rounded,
+                title: 'Total Learners',
+                value: overview != null ? '${overview.totalLearners}' : '—',
+                icon: Icons.people_rounded,
                 barColor: ArrestoColors.green,
                 iconColor: ArrestoColors.green,
               ),
               StatCard(
-                title: 'AI Credits Used',
-                value: '48.2k',
-                icon: Icons.token_rounded,
+                title: 'Active Learners',
+                value: overview != null ? '${overview.activeLearners}' : '—',
+                icon: Icons.person_rounded,
                 barColor: ArrestoColors.amber,
                 iconColor: ArrestoColors.amber,
               ),
-              StatCard(
+              const StatCard(
                 title: 'Avg Gen Time',
-                value: '3m 40s',
+                value: '—',
                 icon: Icons.timer_rounded,
                 barColor: ArrestoColors.blue,
                 iconColor: ArrestoColors.blue,
               ),
-              StatCard(
-                title: 'Regenerated',
-                value: '64',
-                icon: Icons.refresh_rounded,
+              const StatCard(
+                title: 'AI Credits Used',
+                value: '—',
+                icon: Icons.token_rounded,
                 barColor: ArrestoColors.textMuted,
                 iconColor: ArrestoColors.textMuted,
               ),
@@ -127,13 +132,13 @@ class _GenerationTab extends StatelessWidget {
               ? Row(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Expanded(child: _StyleBarChart()),
+                    Expanded(child: _StyleBarChart(overview: overview)),
                     const SizedBox(width: 16),
                     Expanded(child: _GenerationLineChart()),
                   ],
                 )
               : Column(children: [
-                  _StyleBarChart(),
+                  _StyleBarChart(overview: overview),
                   const SizedBox(height: 16),
                   _GenerationLineChart(),
                 ]);
@@ -144,8 +149,41 @@ class _GenerationTab extends StatelessWidget {
 }
 
 class _StyleBarChart extends StatelessWidget {
+  final AnalyticsOverview? overview;
+  const _StyleBarChart({this.overview});
+
+  static const _styleKeys = [
+    ('modern',           'Free',       ArrestoColors.orange),
+    ('animated_scene',   'Animated',   ArrestoColors.amber),
+    ('whiteboard_doodle','Whiteboard', ArrestoColors.blue),
+    ('hybrid',           'Hybrid',     ArrestoColors.green),
+  ];
+
   @override
   Widget build(BuildContext context) {
+    final dist = overview?.styleDistribution ?? {};
+    final maxY = dist.values.isEmpty
+        ? 10.0
+        : (dist.values.reduce((a, b) => a > b ? a : b).toDouble() * 1.2)
+            .clamp(10.0, double.infinity);
+
+    final barGroups = <BarChartGroupData>[];
+    for (int i = 0; i < _styleKeys.length; i++) {
+      final key   = _styleKeys[i].$1;
+      final color = _styleKeys[i].$3;
+      barGroups.add(BarChartGroupData(
+        x: i,
+        barRods: [
+          BarChartRodData(
+            toY: (dist[key] ?? 0).toDouble(),
+            color: color,
+            width: 24,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(6)),
+          ),
+        ],
+      ));
+    }
+
     return ArrestoCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -157,10 +195,10 @@ class _StyleBarChart extends StatelessWidget {
             child: BarChart(
               BarChartData(
                 alignment: BarChartAlignment.spaceAround,
-                maxY: 60,
+                maxY: maxY,
                 gridData: FlGridData(
                   show: true,
-                  horizontalInterval: 20,
+                  horizontalInterval: maxY / 4,
                   getDrawingHorizontalLine: (v) =>
                       FlLine(color: ArrestoColors.line, strokeWidth: 1),
                   drawVerticalLine: false,
@@ -171,16 +209,10 @@ class _StyleBarChart extends StatelessWidget {
                   bottomTitles: AxisTitles(
                     sideTitles: SideTitles(
                       showTitles: true,
-                      getTitlesWidget: (v, _) {
-                        const labels = [
-                          'Animated',
-                          'Whiteboard',
-                          'AI Style',
-                          'Hybrid',
-                        ];
-                        if (v.toInt() < labels.length) {
-                          return Text(labels[v.toInt()],
-                              style: ArrestoText.xs());
+                      getTitlesWidget: (v, meta) {
+                        final i = v.toInt();
+                        if (i < _styleKeys.length) {
+                          return Text(_styleKeys[i].$2, style: ArrestoText.xs());
                         }
                         return const SizedBox.shrink();
                       },
@@ -199,31 +231,12 @@ class _StyleBarChart extends StatelessWidget {
                   rightTitles: const AxisTitles(
                       sideTitles: SideTitles(showTitles: false)),
                 ),
-                barGroups: [
-                  _bar(0, 52, ArrestoColors.amber),
-                  _bar(1, 38, ArrestoColors.blue),
-                  _bar(2, 30, ArrestoColors.orange),
-                  _bar(3, 22, ArrestoColors.green),
-                ],
+                barGroups: barGroups,
               ),
             ),
           ),
         ],
       ),
-    );
-  }
-
-  BarChartGroupData _bar(int x, double y, Color color) {
-    return BarChartGroupData(
-      x: x,
-      barRods: [
-        BarChartRodData(
-          toY: y,
-          color: color,
-          width: 24,
-          borderRadius: const BorderRadius.vertical(top: Radius.circular(6)),
-        )
-      ],
     );
   }
 }
@@ -306,19 +319,36 @@ class _GenerationLineChart extends StatelessWidget {
   }
 }
 
-class _LearnersTab extends StatelessWidget {
+class _LearnersTab extends ConsumerWidget {
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final overview = ref.watch(analyticsOverviewProvider).valueOrNull;
+    final activity = overview?.learnerActivity ?? [];
+    final months   = activity.map((a) => a.month).toList();
+
+    final spots = activity
+        .asMap()
+        .entries
+        .map((e) => FlSpot(e.key.toDouble(), e.value.count.toDouble()))
+        .toList();
+
+    final maxY = activity.isEmpty
+        ? 10.0
+        : (activity.map((a) => a.count).reduce((a, b) => a > b ? a : b).toDouble() * 1.3)
+            .clamp(2.0, double.infinity);
+
     return ArrestoCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Learner Activity', style: ArrestoText.h4()),
+          Text('Learner Activity (last 6 months)', style: ArrestoText.h4()),
           const SizedBox(height: 16),
           SizedBox(
             height: 220,
             child: LineChart(
               LineChartData(
+                minY: 0,
+                maxY: maxY,
                 gridData: FlGridData(
                   show: true,
                   getDrawingHorizontalLine: (v) =>
@@ -331,9 +361,9 @@ class _LearnersTab extends StatelessWidget {
                     sideTitles: SideTitles(
                       showTitles: true,
                       getTitlesWidget: (v, _) {
-                        const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'];
-                        if (v.toInt() < months.length) {
-                          return Text(months[v.toInt()], style: ArrestoText.xs());
+                        final i = v.toInt();
+                        if (i < months.length) {
+                          return Text(months[i], style: ArrestoText.xs());
                         }
                         return const SizedBox.shrink();
                       },
@@ -352,10 +382,7 @@ class _LearnersTab extends StatelessWidget {
                 ),
                 lineBarsData: [
                   LineChartBarData(
-                    spots: const [
-                      FlSpot(0, 900), FlSpot(1, 950), FlSpot(2, 1020),
-                      FlSpot(3, 1100), FlSpot(4, 1150), FlSpot(5, 1284),
-                    ],
+                    spots: spots.isEmpty ? [const FlSpot(0, 0)] : spots,
                     isCurved: true,
                     color: ArrestoColors.blue,
                     barWidth: 2.5,

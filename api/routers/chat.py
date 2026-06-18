@@ -185,25 +185,14 @@ def _looks_like_uuid(s: str) -> bool:
     ))
 
 
-@router.post("", response_model=ChatResponse)
-async def chat(
+async def _process_chat(
     request: ChatRequest,
-    retrieval_pipeline=Depends(get_retrieval_pipeline),
-    embedder=Depends(get_embedder),
-    vector_store=Depends(get_vector_store),
-):
-    """
-    Ask a question about any document in the knowledge base.
-
-    When called from the in-lesson AI companion, pass lesson_id, course_id,
-    timestamp_secs, and transcript_snippet for context-aware answers.
-    Pass history (last 6 turns) for multi-turn conversations.
-
-    Intent-based shortcuts (only when transcript is available AND exact phrasing matches):
-    - "Summarize this lesson" → summarize the full lesson transcript
-    - "Quiz me on this lesson" → produce MCQ questions from the transcript
-    - "Explain the current section" → explain the transcript near the given timestamp
-    """
+    *,
+    retrieval_pipeline,
+    embedder,
+    vector_store,
+) -> ChatResponse:
+    """Core RAG chat logic — callable by both the HTTP route and the voice round-trip."""
     if not request.question.strip():
         raise HTTPException(status_code=400, detail="Question cannot be empty.")
 
@@ -367,4 +356,31 @@ async def chat(
         answer=answer,
         sources=sources,
         model_used=settings.llm_model,
+    )
+
+
+@router.post("", response_model=ChatResponse)
+async def chat(
+    request: ChatRequest,
+    retrieval_pipeline=Depends(get_retrieval_pipeline),
+    embedder=Depends(get_embedder),
+    vector_store=Depends(get_vector_store),
+):
+    """
+    Ask a question about any document in the knowledge base.
+
+    When called from the in-lesson AI companion, pass lesson_id, course_id,
+    timestamp_secs, and transcript_snippet for context-aware answers.
+    Pass history (last 6 turns) for multi-turn conversations.
+
+    Intent-based shortcuts (only when transcript is available AND exact phrasing matches):
+    - "Summarize this lesson" → summarize the full lesson transcript
+    - "Quiz me on this lesson" → produce MCQ questions from the transcript
+    - "Explain the current section" → explain the transcript near the given timestamp
+    """
+    return await _process_chat(
+        request,
+        retrieval_pipeline=retrieval_pipeline,
+        embedder=embedder,
+        vector_store=vector_store,
     )

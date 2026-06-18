@@ -15,6 +15,8 @@ Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$root'; .venv
 Start-Sleep -Milliseconds 800
 
 # Flutter dev server window (hot-reload with 'r', full restart with 'R')
+# Default JS renderer (no --wasm flag) is required for video_player to be visible on web
+# (Skwasm/WASM renderer covers <video> elements with its canvas layer)
 Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$root\frontend-lms'; flutter run -d web-server --web-port $WebPort --web-hostname localhost" -WindowStyle Normal
 
 Write-Host "Two windows opened." -ForegroundColor Cyan

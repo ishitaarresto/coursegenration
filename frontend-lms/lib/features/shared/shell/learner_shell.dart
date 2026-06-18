@@ -300,6 +300,12 @@ class _AIFab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final location = GoRouterState.of(context).uri.toString();
+    // Lesson player has its own AI button; /learner/ai renders the full panel inline.
+    if (location.contains('/lesson/') || location == '/learner/ai') {
+      return const SizedBox.shrink();
+    }
+
     return FloatingActionButton.extended(
       backgroundColor: ArrestoColors.ink,
       onPressed: () => showModalBottomSheet(

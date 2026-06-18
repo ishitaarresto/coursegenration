@@ -14,6 +14,13 @@ import '../../../core/widgets/progress_bar.dart';
 import '../../../data/providers/app_state.dart';
 import '../../../data/providers/api_providers.dart';
 
+String _formattedToday() {
+  final now = DateTime.now();
+  const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  return '${days[now.weekday - 1]}, ${now.day} ${months[now.month - 1]} ${now.year}';
+}
+
 class AdminDashboardScreen extends ConsumerWidget {
   const AdminDashboardScreen({super.key});
 
@@ -36,8 +43,7 @@ class AdminDashboardScreen extends ConsumerWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text('Admin Dashboard', style: ArrestoText.h1()),
-                      Text('Monday, 9 June 2026',
-                          style: ArrestoText.small()),
+                      Text(_formattedToday(), style: ArrestoText.small()),
                     ],
                   ),
                 ),
@@ -173,7 +179,7 @@ class _QuickActions extends StatelessWidget {
           label: 'Invite Learner',
           variant: ArrestoButtonVariant.ghost,
           icon: const Icon(Icons.person_add_rounded),
-          onPressed: () {},
+          onPressed: () => context.go('/admin/learners'),
         ),
         ArrestoButton(
           label: 'View Analytics',
@@ -214,7 +220,7 @@ class _CourseTable extends StatelessWidget {
                 label: 'View All',
                 variant: ArrestoButtonVariant.ghost,
                 size: ArrestoButtonSize.sm,
-                onPressed: () {},
+                onPressed: () => context.go('/admin/courses'),
               ),
             ],
           ),
@@ -306,7 +312,7 @@ class _CourseRow extends StatelessWidget {
             IconButton(
               icon: const Icon(Icons.edit_rounded,
                   size: 16, color: ArrestoColors.textMuted),
-              onPressed: () {},
+              onPressed: () => context.go('/admin/courses'),
             ),
           ],
         ),

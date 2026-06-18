@@ -26,7 +26,9 @@ import logging
 import time
 import uuid
 
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
+import re as _re
+
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import Response
 
 logger = logging.getLogger("arresto.voice")
@@ -37,10 +39,28 @@ from api.dependencies import (
     get_retrieval_pipeline,
     get_vector_store,
 )
-from api.schemas import VoiceChatResponse
+from api.schemas import ChatRequest, VoiceChatResponse
+from api.routers.chat import _process_chat
 
 # Shared session store and engine factory from the tutor router
 from api.routers.tutor import _session_store, _get_engine
+
+
+def _strip_markdown(text: str) -> str:
+    """Remove markdown syntax before sending text to Sarvam TTS."""
+    return (
+        _re.sub(r'\*{1,3}', '', text)
+        .replace('`', '')
+        .replace('~', '')
+        .replace('>', '')
+        .replace('#', '')
+        .replace('•', '')
+        .replace('✨', '')
+        .replace('📍', '')
+        .replace('📝', '')
+        .replace('①②③④⑤', '')
+        .strip()
+    )
 
 router = APIRouter(prefix="/api/v1/voice", tags=["Voice Assistant"])
 
@@ -77,6 +97,108 @@ def _evict_expired() -> None:
 
 
 # -- Routes ---------------------------------------------------------------------
+
+@router.post("/chat")
+async def voice_rag_chat(
+    request:            Request,
+    audio:              UploadFile = File(..., description="Mic recording — webm, mp3, wav, ogg, or m4a"),
+    lesson_id:          str | None = Form(None),
+    course_id:          str | None = Form(None),
+    timestamp_secs:     str | None = Form(None),   # sent as string from multipart
+    history:            str | None = Form(None),   # JSON-encoded list of {role, text}
+    vector_store=       Depends(get_vector_store),
+    embedder=           Depends(get_embedder),
+    retrieval_pipeline= Depends(get_retrieval_pipeline),
+):
+    """
+    Full voice round-trip with the RAG knowledge base (Arresto AI companion).
+
+    Audio → Sarvam STT → RAG retrieval + Claude answer → Sarvam TTS
+
+    Returns:
+      transcription — what Sarvam heard (shown as the user's message in chat)
+      answer        — Claude's answer from the knowledge base
+      audio_id      — fetch the spoken answer from GET /api/v1/voice/audio/{id}
+      audio_url     — convenience path: /api/v1/voice/audio/{audio_id} (null if TTS unavailable)
+    """
+    import json as _json
+
+    # 1. Transcribe audio via Sarvam STT
+    transcriber = _require_transcriber(request)
+    audio_bytes = await audio.read()
+    if not audio_bytes:
+        raise HTTPException(status_code=400, detail="Audio file is empty.")
+
+    try:
+        transcription = await asyncio.to_thread(
+            transcriber.transcribe, audio_bytes, audio.filename or "audio.webm"
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Transcription failed: {exc}")
+
+    if not transcription:
+        raise HTTPException(
+            status_code=400,
+            detail="Could not transcribe audio — please speak clearly and try again.",
+        )
+
+    # 2. RAG chat via the same engine as the text /chat endpoint
+    hist: list[dict] = []
+    if history:
+        try:
+            hist = _json.loads(history)
+        except Exception:
+            hist = []
+
+    ts = None
+    if timestamp_secs:
+        try:
+            ts = int(timestamp_secs)
+        except ValueError:
+            pass
+
+    chat_req = ChatRequest(
+        question=transcription,
+        lesson_id=lesson_id,
+        course_id=course_id,
+        timestamp_secs=ts,
+        history=hist,
+    )
+
+    try:
+        chat_resp = await _process_chat(
+            chat_req,
+            retrieval_pipeline=retrieval_pipeline,
+            embedder=embedder,
+            vector_store=vector_store,
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Answer generation failed: {exc}")
+
+    # 3. Synthesize answer via Sarvam TTS (non-fatal — returns text if TTS unavailable)
+    audio_id = None
+    audio_url = None
+    tts = _get_tts(request)
+    if tts:
+        try:
+            clean = _strip_markdown(chat_resp.answer)
+            mp3_bytes = await asyncio.to_thread(tts.synthesize_bytes, clean[:4000])
+            _evict_expired()
+            audio_id = str(uuid.uuid4())
+            _voice_audio[audio_id] = (mp3_bytes, time.time())
+            audio_url = f"/api/v1/voice/audio/{audio_id}"
+        except Exception as exc:
+            logger.warning("TTS synthesis failed in voice/chat: %s", exc)
+
+    return {
+        "transcription": transcription,
+        "answer":        chat_resp.answer,
+        "audio_id":      audio_id,
+        "audio_url":     audio_url,
+    }
+
 
 @router.post("/session/{session_id}", response_model=VoiceChatResponse)
 async def voice_chat(

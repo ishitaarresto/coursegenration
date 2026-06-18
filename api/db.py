@@ -89,24 +89,27 @@ def _migrate_course_scripts() -> None:
     """
     from sqlalchemy import text
 
+    # (col_name, sql_type, default_sql, nullable)
     new_cols = [
-        ("language",                 "TEXT",    "'English'"),
-        ("difficulty",               "TEXT",    "''"),
-        ("published",                "INTEGER", "0"),
-        ("assessment_num_questions", "INTEGER", "5"),
-        ("assessment_pass_pct",      "INTEGER", "70"),
-        ("assessment_time_min",      "INTEGER", "30"),
-        ("assessment_retakes",       "INTEGER", "3"),
+        ("language",                   "TEXT",    "'English'", False),
+        ("difficulty",                 "TEXT",    "''",        False),
+        ("published",                  "INTEGER", "0",         False),
+        ("assessment_num_questions",   "INTEGER", "5",         False),
+        ("assessment_pass_pct",        "INTEGER", "70",        False),
+        ("assessment_time_min",        "INTEGER", "30",        False),
+        ("assessment_retakes",         "INTEGER", "3",         False),
+        ("assessment_questions_json",  "TEXT",    "NULL",      True),
     ]
 
     with engine.connect() as conn:
         if _is_postgres:
-            for col, typ, default in new_cols:
+            for col, typ, default, nullable in new_cols:
                 pg_type = "BOOLEAN" if typ == "INTEGER" and col == "published" else typ
+                null_clause = "" if nullable else f" NOT NULL DEFAULT {default}"
                 try:
                     conn.execute(text(
                         f"ALTER TABLE course_scripts ADD COLUMN IF NOT EXISTS "
-                        f"{col} {pg_type} NOT NULL DEFAULT {default}"
+                        f"{col} {pg_type}{null_clause}"
                     ))
                     conn.commit()
                 except Exception:
@@ -114,10 +117,15 @@ def _migrate_course_scripts() -> None:
         else:
             result   = conn.execute(text("PRAGMA table_info(course_scripts)"))
             existing = {row[1] for row in result}
-            for col, typ, default in new_cols:
+            for col, typ, default, nullable in new_cols:
                 if col not in existing:
-                    conn.execute(text(
-                        f"ALTER TABLE course_scripts ADD COLUMN "
-                        f"{col} {typ} NOT NULL DEFAULT {default}"
-                    ))
+                    if nullable:
+                        conn.execute(text(
+                            f"ALTER TABLE course_scripts ADD COLUMN {col} {typ}"
+                        ))
+                    else:
+                        conn.execute(text(
+                            f"ALTER TABLE course_scripts ADD COLUMN "
+                            f"{col} {typ} NOT NULL DEFAULT {default}"
+                        ))
             conn.commit()

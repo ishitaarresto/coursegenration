@@ -172,22 +172,80 @@ PRODUCTION REQUIREMENTS:
     return prompt[:4000]
 
 
-def _submit(prompt: str) -> str:
-    """POST to /v3/video-agents → returns video_id."""
-    with _client() as c:
-        r = c.post("/v3/video-agents", json={"prompt": prompt})
+def _submit(prompt: str, *, max_retries: int = 4) -> str:
+    """POST to /v3/video-agents → returns session_id.
+
+    The Video Agent API returns a session_id immediately; video_id is null at
+    this stage and must be retrieved by polling _poll_session() next.
+
+    Retries with exponential backoff for transient 429/5xx responses.
+    Permanent failures (402 credits, 400 bad-request) raise immediately.
+    """
+    delay = 5.0
+    last_error: str = ""
+    for attempt in range(max_retries + 1):
+        with _client() as c:
+            r = c.post("/v3/video-agents", json={"prompt": prompt})
+
         if r.status_code == 402 or "insufficient_credit" in r.text:
             raise HeyGenError(
                 "HeyGen credits exhausted. Top up at app.heygen.com → Billing, "
-                "then try again. (Tip: use style=claude_native for free rendering.)"
+                "then try again. (Tip: use style=modern for free rendering.)"
             )
+
+        # 400 is a permanent client error (bad payload) — don't retry
+        if r.status_code == 400:
+            raise HeyGenError(f"HeyGen submit failed [400]: {r.text}")
+
+        # Transient: 429 or 5xx
+        if r.status_code == 429 or r.status_code >= 500:
+            last_error = f"HeyGen submit failed [{r.status_code}]: {r.text}"
+            if attempt < max_retries:
+                time.sleep(delay)
+                delay = min(delay * 2, 60.0)
+                continue
+            raise HeyGenError(last_error)
+
         if r.status_code >= 400:
             raise HeyGenError(f"HeyGen submit failed [{r.status_code}]: {r.text}")
+
         data = r.json().get("data", {})
-        video_id = data.get("video_id") or data.get("id")
-        if not video_id:
-            raise HeyGenError(f"No video_id in HeyGen submit response: {r.text}")
-        return video_id
+        session_id = data.get("session_id")
+        if not session_id:
+            raise HeyGenError(f"No session_id in HeyGen submit response: {r.text}")
+        return session_id
+
+    raise HeyGenError(last_error or "HeyGen submit failed after retries.")
+
+
+def _poll_session(session_id: str, *, interval: float = 5.0, timeout: float = 300.0) -> str:
+    """GET /v3/video-agents/{session_id} until video_id is assigned → returns video_id.
+
+    The Video Agent API assigns a video_id asynchronously after the session is
+    created. This step bridges the gap between submit and video polling.
+    """
+    deadline = time.monotonic() + timeout
+    with _client() as c:
+        while time.monotonic() < deadline:
+            r = c.get(f"/v3/video-agents/{session_id}")
+            if r.status_code >= 400:
+                raise HeyGenError(
+                    f"HeyGen session poll failed [{r.status_code}]: {r.text}"
+                )
+            data     = r.json().get("data", {})
+            status   = data.get("status", "")
+            video_id = data.get("video_id")
+            if video_id:
+                return video_id
+            if status in {"failed", "error"}:
+                raise HeyGenError(
+                    f"HeyGen session failed before assigning a video_id: {r.text}"
+                )
+            time.sleep(interval)
+    raise HeyGenError(
+        f"HeyGen session {session_id} did not assign a video_id within "
+        f"{timeout / 60:.0f} min."
+    )
 
 
 def _poll_video(video_id: str, *, interval: float = 10.0, timeout: float = 2400.0) -> str:
@@ -260,7 +318,8 @@ def generate_heygen_video(
     if out_path.exists() and out_path.stat().st_size > 10_000:
         return out_path
 
-    prompt   = _build_prompt(lesson_title, lc, style, lang)
-    video_id = _submit(prompt)
-    url      = _poll_video(video_id)
+    prompt     = _build_prompt(lesson_title, lc, style, lang)
+    session_id = _submit(prompt)
+    video_id   = _poll_session(session_id)
+    url        = _poll_video(video_id)
     return _download(url, out_path)

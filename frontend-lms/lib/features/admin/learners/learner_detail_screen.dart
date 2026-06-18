@@ -7,7 +7,7 @@ import '../../../core/widgets/arresto_card.dart';
 import '../../../core/widgets/avatar.dart';
 import '../../../core/widgets/badge.dart';
 import '../../../core/widgets/progress_bar.dart';
-import '../../../data/providers/app_state.dart';
+import '../../../data/providers/api_providers.dart';
 
 class LearnerDetailScreen extends ConsumerWidget {
   final String id;
@@ -15,9 +15,25 @@ class LearnerDetailScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final learners = ref.watch(learnersProvider);
-    final learner =
-        learners.firstWhere((l) => l.id == id, orElse: () => learners.first);
+    final learnerAsync = ref.watch(learnerDetailApiProvider(id));
+    final learner = learnerAsync.valueOrNull;
+    if (learner == null) {
+      return Scaffold(
+        backgroundColor: ArrestoColors.background,
+        appBar: AppBar(
+          backgroundColor: ArrestoColors.surface,
+          foregroundColor: ArrestoColors.ink,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back_rounded),
+            onPressed: () => context.pop(),
+          ),
+        ),
+        body: learnerAsync.isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : const Center(child: Text('Learner not found.')),
+      );
+    }
+
 
     return Scaffold(
       backgroundColor: ArrestoColors.background,

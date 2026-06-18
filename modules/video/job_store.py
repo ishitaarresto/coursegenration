@@ -47,8 +47,21 @@ class VideoJobStore:
             from api.db import SessionLocal
             from api.models.renders import VideoRenderRow
             with SessionLocal() as db:
-                for row in db.query(VideoRenderRow).all():
+                rows = db.query(VideoRenderRow).all()
+                stale = 0
+                for row in rows:
+                    # Any job that was pending/processing at shutdown was killed by
+                    # the process restart and will never complete — mark it failed so
+                    # generate-all can re-queue it on the next call.
+                    if row.status in ("pending", "processing"):
+                        row.status      = "failed"
+                        row.error       = "Server restarted before this job completed."
+                        row.finished_at = time.time()
+                        stale += 1
                     self._jobs[row.render_id] = self._row_to_job(row)
+                if stale:
+                    db.commit()
+                    logger.info("Marked %d stale render job(s) as failed on startup.", stale)
         except Exception as exc:
             logger.warning("Could not load video jobs from DB: %s", exc)
 
@@ -95,11 +108,12 @@ class VideoJobStore:
         return self._jobs.get(render_id.strip())
 
     def list_for_script(self, script_id: str) -> list[VideoRenderJob]:
-        return [j for j in self._jobs.values() if j.script_id == script_id]
+        jobs = [j for j in self._jobs.values() if j.script_id == script_id]
+        return sorted(jobs, key=lambda j: j.started_at, reverse=True)  # newest first
 
     def save(self) -> None:
         """Persist all in-memory jobs (called by render engine after status changes)."""
-        for job in self._jobs.values():
+        for job in list(self._jobs.values()):  # snapshot avoids dict-changed-size-during-iteration
             self._upsert(job)
 
     # -- Internal helpers ------------------------------------------------------

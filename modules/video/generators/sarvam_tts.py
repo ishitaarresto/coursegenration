@@ -16,10 +16,13 @@ import httpx
 from api.config import settings
 
 SARVAM_VOICES: dict[str, tuple[str, str]] = {
-    "hi":    ("hi-IN", "ananya"),
-    "hi-in": ("hi-IN", "ananya"),
-    "ta":    ("ta-IN", "meera"),
-    "te":    ("te-IN", "aryan"),
+    # Speakers confirmed for Bulbul-v3 (June 2026).
+    # Bulbul-v3 speakers are multilingual — lang code selects the language,
+    # speaker name selects the voice timbre. Any speaker works with any lang.
+    "hi":    ("hi-IN", "ritu"),
+    "hi-in": ("hi-IN", "ritu"),
+    "ta":    ("ta-IN", "kavitha"),
+    "te":    ("te-IN", "gokul"),
     "bn":    ("bn-IN", "priya"),
     "gu":    ("gu-IN", "kavya"),
     "kn":    ("kn-IN", "ishita"),

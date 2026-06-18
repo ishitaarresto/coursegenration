@@ -707,7 +707,22 @@ class _DangerZone extends StatelessWidget {
             ),
             icon: const Icon(Icons.delete_forever_rounded, size: 16),
             label: const Text('Delete All Platform Data'),
-            onPressed: () {},
+            onPressed: () => showDialog(
+              context: context,
+              builder: (ctx) => AlertDialog(
+                title: const Text('Not available'),
+                content: const Text(
+                  'Platform data deletion is not yet supported. '
+                  'Please contact your system administrator.',
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    child: const Text('OK'),
+                  ),
+                ],
+              ),
+            ),
           ),
         ],
       ),

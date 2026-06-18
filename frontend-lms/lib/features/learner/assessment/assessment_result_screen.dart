@@ -3,10 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../core/theme/colors.dart';
 import '../../../core/theme/typography.dart';
-import '../../../core/theme/spacing.dart';
 import '../../../core/widgets/button.dart';
 import '../../../core/widgets/arresto_card.dart';
-import '../../../core/widgets/progress_bar.dart';
 import '../../../data/providers/api_providers.dart';
 
 class AssessmentResultScreen extends ConsumerWidget {
@@ -18,9 +16,12 @@ class AssessmentResultScreen extends ConsumerWidget {
     final quizResult = ref.watch(quizResultsProvider);
 
     final correct = quizResult?.correct ?? 0;
-    final total = quizResult?.total ?? 6;
+    final total = quizResult?.total ?? 0;
     final score = quizResult?.score ?? 0;
-    final passed = score >= 70;
+    final passPct = quizResult?.passPct ?? 70;
+    final passed = score >= passPct;
+    final elapsed = quizResult?.elapsedSeconds ?? 0;
+    final elapsedStr = _formatTime(elapsed);
 
     return SingleChildScrollView(
         padding: const EdgeInsets.all(20),
@@ -48,9 +49,7 @@ class AssessmentResultScreen extends ConsumerWidget {
                       shape: BoxShape.circle,
                     ),
                     child: Icon(
-                      passed
-                          ? Icons.check_rounded
-                          : Icons.close_rounded,
+                      passed ? Icons.check_rounded : Icons.close_rounded,
                       color: Colors.white,
                       size: 40,
                     ),
@@ -67,7 +66,7 @@ class AssessmentResultScreen extends ConsumerWidget {
                   Text(
                     passed
                         ? 'Congratulations! You\'ve passed the assessment.'
-                        : 'You scored below the 70% pass mark. Please retake.',
+                        : 'You scored below the $passPct% pass mark. Please retake.',
                     style: ArrestoText.body(),
                     textAlign: TextAlign.center,
                   ),
@@ -87,63 +86,100 @@ class AssessmentResultScreen extends ConsumerWidget {
               children: [
                 _metric('Score', '$score%',
                     passed ? ArrestoColors.green : ArrestoColors.red),
-                _metric('Correct', '$correct',
-                    ArrestoColors.green),
-                _metric('Incorrect', '${total - correct}',
-                    ArrestoColors.red),
-                _metric('Time', '12:34', ArrestoColors.blue),
+                _metric('Correct', '$correct', ArrestoColors.green),
+                _metric('Incorrect', '${total - correct}', ArrestoColors.red),
+                _metric('Time', elapsedStr, ArrestoColors.blue),
               ],
             ),
             const SizedBox(height: 20),
 
-            // Performance by topic
-            ArrestoCard(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text('Performance by Topic', style: ArrestoText.h4()),
-                  const SizedBox(height: 16),
-                  ...[
-                    ('Anchor Points', 0.8),
-                    ('Equipment Inspection', 0.6),
-                    ('Fall Clearance', 0.5),
-                    ('System Components', 1.0),
-                  ].map((t) {
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Expanded(
-                                  child: Text(t.$1,
-                                      style: ArrestoText.bodySm(
-                                          color: ArrestoColors.ink))),
-                              Text(
-                                  '${(t.$2 * 100).round()}%',
-                                  style: ArrestoText.small(
-                                      color: t.$2 >= 0.7
-                                          ? ArrestoColors.green
-                                          : ArrestoColors.red)
-                                    ..copyWith(fontWeight: FontWeight.w700)),
-                            ],
-                          ),
-                          const SizedBox(height: 4),
-                          AnimatedArrestoProgressBar(
-                            value: t.$2,
-                            tone: t.$2 >= 0.7
-                                ? ProgressTone.green
-                                : ProgressTone.red,
-                            height: 6,
-                          ),
-                        ],
+            // Question breakdown (real data from quiz results)
+            if (quizResult != null && quizResult.questions.isNotEmpty)
+              ArrestoCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Question Breakdown', style: ArrestoText.h4()),
+                    const SizedBox(height: 14),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: List.generate(
+                        quizResult.questions.length,
+                        (i) {
+                          final q = quizResult.questions[i];
+                          final selectedKey = quizResult.answers[q.id];
+                          final wasCorrect = selectedKey != null &&
+                              selectedKey == quizResult.correctAnswers[q.id];
+                          final skipped = selectedKey == null;
+
+                          Color bg;
+                          Color border;
+                          IconData icon;
+                          Color iconColor;
+
+                          if (skipped) {
+                            bg = ArrestoColors.bg2;
+                            border = ArrestoColors.line;
+                            icon = Icons.remove_rounded;
+                            iconColor = ArrestoColors.textMuted;
+                          } else if (wasCorrect) {
+                            bg = ArrestoColors.greenSoft;
+                            border = ArrestoColors.green;
+                            icon = Icons.check_rounded;
+                            iconColor = ArrestoColors.green;
+                          } else {
+                            bg = ArrestoColors.redSoft;
+                            border = ArrestoColors.red;
+                            icon = Icons.close_rounded;
+                            iconColor = ArrestoColors.red;
+                          }
+
+                          return Tooltip(
+                            message: skipped
+                                ? 'Q${i + 1}: Skipped'
+                                : 'Q${i + 1}: ${wasCorrect ? 'Correct' : 'Incorrect'}',
+                            child: Container(
+                              width: 44,
+                              height: 44,
+                              decoration: BoxDecoration(
+                                color: bg,
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: border),
+                              ),
+                              child: Column(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  Icon(icon, size: 14, color: iconColor),
+                                  Text(
+                                    'Q${i + 1}',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w700,
+                                      color: iconColor,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          );
+                        },
                       ),
-                    );
-                  }),
-                ],
+                    ),
+                    const SizedBox(height: 10),
+                    Row(children: [
+                      _legend(ArrestoColors.greenSoft, ArrestoColors.green,
+                          Icons.check_rounded, 'Correct'),
+                      const SizedBox(width: 16),
+                      _legend(ArrestoColors.redSoft, ArrestoColors.red,
+                          Icons.close_rounded, 'Incorrect'),
+                      const SizedBox(width: 16),
+                      _legend(ArrestoColors.bg2, ArrestoColors.textMuted,
+                          Icons.remove_rounded, 'Skipped'),
+                    ]),
+                  ],
+                ),
               ),
-            ),
             const SizedBox(height: 20),
 
             // Actions
@@ -168,9 +204,15 @@ class AssessmentResultScreen extends ConsumerWidget {
                 if (passed)
                   ArrestoButton(
                     label: 'Download Certificate',
-                    icon: const Icon(
-                        Icons.workspace_premium_rounded),
-                    onPressed: () {},
+                    icon: const Icon(Icons.workspace_premium_rounded),
+                    onPressed: () {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Certificate download coming soon — check the Certificates tab.'),
+                          duration: Duration(seconds: 3),
+                        ),
+                      );
+                    },
                   ),
                 ArrestoButton(
                   label: 'Back to Course',
@@ -183,6 +225,12 @@ class AssessmentResultScreen extends ConsumerWidget {
           ],
         ),
       );
+  }
+
+  String _formatTime(int seconds) {
+    final m = seconds ~/ 60;
+    final s = seconds % 60;
+    return '${m.toString().padLeft(2, '0')}:${s.toString().padLeft(2, '0')}';
   }
 
   Widget _metric(String label, String value, Color color) {
@@ -206,5 +254,22 @@ class AssessmentResultScreen extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  Widget _legend(Color bg, Color fg, IconData icon, String label) {
+    return Row(mainAxisSize: MainAxisSize.min, children: [
+      Container(
+        width: 18,
+        height: 18,
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(4),
+          border: Border.all(color: fg),
+        ),
+        child: Icon(icon, size: 12, color: fg),
+      ),
+      const SizedBox(width: 4),
+      Text(label, style: ArrestoText.xs()),
+    ]);
   }
 }

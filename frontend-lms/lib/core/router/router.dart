@@ -14,6 +14,7 @@ import '../../features/learner/assessment/assessment_intro_screen.dart';
 import '../../features/learner/assessment/assessment_quiz_screen.dart';
 import '../../features/learner/assessment/assessment_result_screen.dart';
 import '../../features/learner/assessment/assessment_review_screen.dart';
+import '../../features/learner/assessment/assessment_flashcards_screen.dart';
 import '../../features/learner/certificates/certificates_screen.dart';
 import '../../features/learner/support/support_screen.dart';
 import '../../features/learner/profile/profile_screen.dart';
@@ -99,6 +100,13 @@ final routerProvider = Provider<GoRouter>((ref) {
             pageBuilder: (ctx, state) => _fade(
               state,
               AssessmentReviewScreen(courseId: state.pathParameters['courseId']!),
+            ),
+          ),
+          GoRoute(
+            path: '/learner/assessment/:courseId/flashcards',
+            pageBuilder: (ctx, state) => _fade(
+              state,
+              AssessmentFlashcardsScreen(courseId: state.pathParameters['courseId']!),
             ),
           ),
           GoRoute(

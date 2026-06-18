@@ -62,3 +62,18 @@ class WeakTopicRow(Base):
     miss_count:   Mapped[int]          = Column(Integer, nullable=False, default=0)
     total_count:  Mapped[int]          = Column(Integer, nullable=False, default=0)
     last_seen_at: Mapped[float | None] = Column(Float)
+
+
+class AssessmentAttemptRow(Base):
+    __tablename__ = "assessment_attempts"
+
+    id:              Mapped[str]   = Column(String, primary_key=True)
+    learner_id:      Mapped[str]   = Column(String, nullable=False, index=True)
+    script_id:       Mapped[str]   = Column(String, nullable=False, index=True)
+    score:           Mapped[int]   = Column(Integer, nullable=False)
+    correct:         Mapped[int]   = Column(Integer, nullable=False)
+    total:           Mapped[int]   = Column(Integer, nullable=False)
+    passed:          Mapped[int]   = Column(Integer, nullable=False)  # 0/1 sqlite compat
+    elapsed_seconds: Mapped[int]   = Column(Integer, nullable=False, default=0)
+    answers_json:    Mapped[str]   = Column(String, nullable=False, default='{}')
+    taken_at:        Mapped[float] = Column(Float, nullable=False)

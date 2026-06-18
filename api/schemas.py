@@ -352,6 +352,28 @@ class VoiceChatResponse(BaseModel):
     history_length: int
 
 
+# -- Assessment attempts -------------------------------------------------------
+
+class AssessmentAttemptRequest(BaseModel):
+    learner_id:      str
+    score:           int = Field(..., ge=0, le=100)
+    correct:         int
+    total:           int
+    passed:          bool
+    elapsed_seconds: int = 0
+    answers:         dict[str, str] = Field(default_factory=dict)
+
+
+class AssessmentAttemptItem(BaseModel):
+    id:              str
+    score:           int
+    correct:         int
+    total:           int
+    passed:          bool
+    elapsed_seconds: int
+    taken_at:        float
+
+
 # -- Health ---------------------------------------------------------------------
 
 class HealthResponse(BaseModel):

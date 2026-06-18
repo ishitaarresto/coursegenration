@@ -9,7 +9,9 @@ from api.models.jobs import UploadJobRow, CourseJobRow
 from api.models.courses import CourseScriptRow
 from api.models.sessions import TutorSessionRow
 from api.models.renders import VideoRenderRow
-from api.models.progress import LessonRecordRow, QuizAttemptRow, WeakTopicRow
+from api.models.progress import LessonRecordRow, QuizAttemptRow, WeakTopicRow, AssessmentAttemptRow
+from api.models.profile import LearnerProfileRow
+from api.models.notifications import NotificationRow
 
 __all__ = [
     "UploadJobRow",
@@ -20,4 +22,7 @@ __all__ = [
     "LessonRecordRow",
     "QuizAttemptRow",
     "WeakTopicRow",
+    "AssessmentAttemptRow",
+    "LearnerProfileRow",
+    "NotificationRow",
 ]

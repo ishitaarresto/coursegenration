@@ -42,7 +42,11 @@ enum _Voice { idle, listening, transcribing, processing, speaking }
 class ArrestoAIPanel extends StatefulWidget {
   final String? seedQuestion;
   final AiLessonContext? lessonContext;
-  const ArrestoAIPanel({super.key, this.seedQuestion, this.lessonContext});
+  /// When true, renders as a full-page widget (no height cap, no drag handle,
+  /// no close button, no rounded top corners). Use for the /learner/ai route.
+  /// When false (default), renders as a bottom sheet panel.
+  final bool embedded;
+  const ArrestoAIPanel({super.key, this.seedQuestion, this.lessonContext, this.embedded = false});
 
   @override
   State<ArrestoAIPanel> createState() => _ArrestoAIPanelState();
@@ -270,28 +274,73 @@ class _ArrestoAIPanelState extends State<ArrestoAIPanel> {
       final bytes = await completer.future;
 
       _track('voice_listen_result');
-      final text = await ChatService.transcribeAudio(bytes);
 
-      if (!mounted) return;
-      if (text.isEmpty) {
+      // Build conversation history for context
+      final prevMessages = List.of(_messages);
+      final historyWindow = prevMessages.length > 6
+          ? prevMessages.sublist(prevMessages.length - 6)
+          : prevMessages;
+      final history = historyWindow
+          .map((m) => {'role': m.isUser ? 'user' : 'assistant', 'text': m.text})
+          .toList();
+
+      try {
+        // Voice round-trip: Sarvam STT → RAG knowledge base → Sarvam TTS (one call)
+        final result = await ChatService.voiceChat(
+          bytes,
+          lessonContext: widget.lessonContext,
+          history: history,
+        );
+
+        if (!mounted) return;
+
+        final aiIdx = _messages.length + 1;
         setState(() {
           _sttProcessing = false;
-          _voiceError = 'Didn\'t catch that — please speak again.';
+          _messages.add(_Message(text: result.transcription, isUser: true));
+          _messages.add(_Message(text: result.answer, isUser: false));
         });
-      } else {
-        setState(() {
-          _sttProcessing = false;
-          _controller.text = text;
-        });
-        _send(text);
-        _controller.clear();
+        _scrollToBottom();
+
+        // Auto-speak the AI answer if the backend synthesised audio
+        if (result.audioUrl != null) {
+          setState(() => _speakingIndex = aiIdx);
+          _tts.playUrl(result.audioUrl!);
+        }
+      } catch (_voiceErr) {
+        // Fall back to STT-only if the voice/chat endpoint is unavailable
+        debugPrint('[Voice] round-trip failed, falling back to STT: $_voiceErr');
+        if (!mounted) return;
+        try {
+          final text = await ChatService.transcribeAudio(bytes);
+          if (!mounted) return;
+          if (text.isEmpty) {
+            setState(() {
+              _sttProcessing = false;
+              _voiceError = "Didn't catch that — please speak again.";
+            });
+          } else {
+            setState(() {
+              _sttProcessing = false;
+              _controller.text = text;
+            });
+            _send(text);
+            _controller.clear();
+          }
+        } catch (e) {
+          if (!mounted) return;
+          setState(() {
+            _sttProcessing = false;
+            _voiceError = 'Transcription error: $e';
+          });
+        }
       }
     } catch (e) {
-      debugPrint('[STT] transcription error: $e');
+      debugPrint('[STT] audio read error: $e');
       if (!mounted) return;
       setState(() {
         _sttProcessing = false;
-        _voiceError = 'Transcription error: $e';
+        _voiceError = 'Could not read audio: $e';
       });
     }
   }
@@ -420,14 +469,12 @@ class _ArrestoAIPanelState extends State<ArrestoAIPanel> {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: MediaQuery.of(context).size.height * 0.78,
-      decoration: const BoxDecoration(
-        color: ArrestoColors.surface,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      child: Column(
-        children: [
+    final isSheet = !widget.embedded;
+
+    final body = Column(
+      children: [
+        // Drag handle — sheet mode only
+        if (isSheet)
           Center(
             child: Container(
               width: 36,
@@ -439,54 +486,57 @@ class _ArrestoAIPanelState extends State<ArrestoAIPanel> {
               ),
             ),
           ),
-          // Header
-          Container(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
-            decoration: const BoxDecoration(
-              color: ArrestoColors.ink,
-              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-            ),
-            child: Row(
-              children: [
-                const ArrestoAiLogo(size: 36),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Arresto AI', style: ArrestoText.h4(color: Colors.white)),
-                      Row(
-                        children: [
-                          Container(
-                            width: 6,
-                            height: 6,
-                            decoration: const BoxDecoration(
-                              color: ArrestoColors.green,
-                              shape: BoxShape.circle,
-                            ),
+        // Header
+        Container(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+          decoration: BoxDecoration(
+            color: ArrestoColors.ink,
+            borderRadius: isSheet
+                ? const BorderRadius.vertical(top: Radius.circular(20))
+                : BorderRadius.zero,
+          ),
+          child: Row(
+            children: [
+              const ArrestoAiLogo(size: 36),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Arresto AI', style: ArrestoText.h4(color: Colors.white)),
+                    Row(
+                      children: [
+                        Container(
+                          width: 6,
+                          height: 6,
+                          decoration: const BoxDecoration(
+                            color: ArrestoColors.green,
+                            shape: BoxShape.circle,
                           ),
-                          const SizedBox(width: 4),
-                          Flexible(
-                            child: Text(
-                              widget.lessonContext != null
-                                  ? 'On: ${widget.lessonContext!.lessonTitle}'
-                                  : 'Online — Safety training assistant',
-                              overflow: TextOverflow.ellipsis,
-                              style: ArrestoText.xs(color: Colors.white54),
-                            ),
+                        ),
+                        const SizedBox(width: 4),
+                        Flexible(
+                          child: Text(
+                            widget.lessonContext != null
+                                ? 'On: ${widget.lessonContext!.lessonTitle}'
+                                : 'Online — Safety training assistant',
+                            overflow: TextOverflow.ellipsis,
+                            style: ArrestoText.xs(color: Colors.white54),
                           ),
-                        ],
-                      ),
-                    ],
-                  ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ),
+              ),
+              if (isSheet)
                 IconButton(
                   icon: const Icon(Icons.close_rounded, color: Colors.white54, size: 20),
                   onPressed: () => Navigator.pop(context),
                 ),
-              ],
-            ),
+            ],
           ),
+        ),
           // Messages
           Expanded(
             child: _messages.isEmpty
@@ -590,7 +640,19 @@ class _ArrestoAIPanelState extends State<ArrestoAIPanel> {
             ),
           ),
         ],
+    );
+
+    // In embedded (full-page) mode wrap in a surface-coloured box so the
+    // messages area and input bar have the correct background. In sheet mode
+    // wrap with the fixed-height container and rounded top corners.
+    if (!isSheet) return ColoredBox(color: ArrestoColors.surface, child: body);
+    return Container(
+      height: MediaQuery.of(context).size.height * 0.78,
+      decoration: const BoxDecoration(
+        color: ArrestoColors.surface,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
+      child: body,
     );
   }
 }

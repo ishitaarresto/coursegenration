@@ -59,6 +59,17 @@ class ProgressTracker:
                 r.module_checkpoint_score = round(score, 3)
                 self._store.upsert_lesson_record(r)
 
+    def record_lesson_complete(
+        self, learner_id: str, course_id: str, module_idx: int, lesson_idx: int
+    ) -> None:
+        """Mark a lesson as fully watched without a checkpoint quiz score."""
+        self._store.upsert_lesson_record(LessonRecord(
+            learner_id=learner_id, course_id=course_id,
+            module_idx=module_idx, lesson_idx=lesson_idx,
+            started_at=time.time(),  # COALESCE keeps existing started_at
+            completed_at=time.time(),
+        ))
+
     def record_quiz_attempt(
         self,
         *,

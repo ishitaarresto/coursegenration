@@ -19,7 +19,7 @@ router = APIRouter(prefix="/api/v1/questions", tags=["Questions"])
 
 _SYSTEM = (
     "You are an expert instructional designer for safety training. "
-    "Generate multiple-choice questions that test genuine understanding. "
+    "Generate a mix of multiple-choice and true/false questions that test genuine understanding. "
     "Avoid trivial or trick questions. Always return valid JSON, nothing else."
 )
 
@@ -32,10 +32,20 @@ Return a JSON object with this exact structure (no markdown, no explanation, jus
       "prompt": "Question text here?",
       "options": ["Option A text", "Option B text", "Option C text", "Option D text"],
       "correct_index": 0
+    },
+    {
+      "type": "trueFalse",
+      "prompt": "Statement that is true or false?",
+      "options": ["True", "False"],
+      "correct_index": 0
     }
   ]
 }
-correct_index is 0-based (0 = first option).
+Rules:
+- type is either "multipleChoice" or "trueFalse"
+- multipleChoice must have exactly 4 options
+- trueFalse must have exactly ["True", "False"] as options
+- correct_index is 0-based (0 = first option)
 """
 
 
@@ -90,11 +100,15 @@ def _generate_questions(
             f"focus questions on material covered up to this point."
         )
 
+    # For 3 questions: 2 MCQ + 1 True/False. For other counts scale proportionally.
+    tf_count  = max(1, count // 3)
+    mcq_count = count - tf_count
+
     user_msg = (
         f"Lesson: {lesson_title}{timestamp_note}\n\n"
         f"Transcript:\n{narration[:8000]}\n\n"
-        f"Generate exactly {count} multiple-choice questions from this lesson. "
-        f"Each question must have 4 options and one correct answer.\n\n"
+        f"Generate exactly {count} questions from this lesson: "
+        f"{mcq_count} multiple-choice (4 options each) and {tf_count} true/false.\n\n"
         f"{_QUESTION_SCHEMA}"
     )
 

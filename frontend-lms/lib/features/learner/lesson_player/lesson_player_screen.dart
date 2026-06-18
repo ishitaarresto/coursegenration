@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:video_player/video_player.dart';
 import '../../../core/theme/colors.dart';
 import '../../../core/theme/typography.dart';
 import '../../../core/widgets/arresto_card.dart';
@@ -13,11 +14,15 @@ import '../../../core/widgets/arresto_ai_logo.dart';
 import 'interactive_question.dart';
 import '../../../data/providers/app_state.dart';
 import '../../../data/providers/api_providers.dart';
+import '../../../core/config/api_config.dart';
 import '../../../core/services/course_service.dart';
+import '../../../core/services/question_service.dart';
 import '../../../core/services/sarvam_tts_service.dart';
+import '../../../core/services/video_service.dart' show VideoRenderJob;
 import '../../../data/models/lesson.dart' show CourseLesson;
 import '../../../data/models/course.dart';
 import '../../shared/arresto_ai/arresto_ai_panel.dart';
+import '../../../core/services/progress_service.dart';
 
 // ── Note model (persisted) ──────────────────────────────────────────────────
 class _Note {
@@ -53,8 +58,10 @@ class LessonPlayerScreen extends ConsumerStatefulWidget {
 
 class _LessonPlayerScreenState extends ConsumerState<LessonPlayerScreen> {
   Timer? _ticker;
+  Timer? _renderPollTimer;   // polls backend while renders are pending/processing
   bool _playing = false;
   int _posSecs = 0;
+  int? _realVideoDurationSecs; // set once the actual video loads
   bool _showKCheck = false;
   bool _kcDone = false;
   int _xp = 120;
@@ -71,12 +78,18 @@ class _LessonPlayerScreenState extends ConsumerState<LessonPlayerScreen> {
   String _transcriptQuery = '';
   SharedPreferences? _prefs;
 
-  static const _kcQuestion = InteractiveQuestion(
-    type: QuestionType.multipleChoice,
-    prompt: 'What\'s the accepted minimum rating for a fall-arrest anchor?',
-    options: ['10 kN', '22 kN', '5 kN', 'Any steel beam'],
-    correctIndex: 1,
-  );
+  // Knowledge-check questions: fetched from backend at the checkpoint
+  List<InteractiveQuestion> _kcQuestions = [];
+  int _kcQuestionIndex = 0;
+  bool _kcLoading = false;
+
+  // Progress tracking
+  bool _startRecorded = false;
+  bool _progressRecorded = false;
+  int _moduleIdx = 1;
+  int _lessonIdx = 1;
+  String _currentLessonTitle = '';
+  int _kcCorrect = 0;
 
   String get _notesKey => 'lesson_notes_${widget.lessonId}';
 
@@ -93,10 +106,114 @@ class _LessonPlayerScreenState extends ConsumerState<LessonPlayerScreen> {
   @override
   void dispose() {
     _ticker?.cancel();
+    _renderPollTimer?.cancel();
     _noteCtrl.dispose();
     _noteSearchCtrl.dispose();
     _transcriptSearchCtrl.dispose();
     super.dispose();
+  }
+
+  // ── Progress tracking ──────────────────────────────────────────────────────
+
+  static (int, int) _parseIds(String lessonId) {
+    final m = RegExp(r'm(\d+)l(\d+)').firstMatch(lessonId);
+    if (m != null) return (int.parse(m.group(1)!), int.parse(m.group(2)!));
+    return (1, 1);
+  }
+
+  void _initProgress(CourseLesson lesson) {
+    if (_startRecorded) return;
+    _startRecorded = true;
+    final ids = _parseIds(lesson.id);
+    _moduleIdx = ids.$1;
+    _lessonIdx = ids.$2;
+    _currentLessonTitle = lesson.title;
+    ProgressService.recordLessonStart(
+      learnerId: ref.read(learnerIdProvider),
+      courseId: widget.courseId,
+      moduleIdx: _moduleIdx,
+      lessonIdx: _lessonIdx,
+    ).catchError((_) {});
+  }
+
+  void _recordKcAttempt(InteractiveQuestion question, QuestionResult result) {
+    final correctAnswer = (question.correctIndex != null &&
+            question.correctIndex! < question.resolvedOptions.length)
+        ? question.resolvedOptions[question.correctIndex!]
+        : '';
+    ProgressService.recordQuizAttempt(
+      learnerId: ref.read(learnerIdProvider),
+      courseId: widget.courseId,
+      moduleIdx: _moduleIdx,
+      lessonIdx: _lessonIdx,
+      questionId: '${widget.lessonId}_kc_$_kcQuestionIndex',
+      questionText: question.prompt,
+      learnerAnswer: result.answer,
+      correctAnswer: correctAnswer,
+      isCorrect: result.correct,
+      topicTag: _currentLessonTitle,
+      quizType: 'lesson_checkpoint',
+    ).catchError((_) {});
+  }
+
+  void _recordKcComplete() {
+    if (_progressRecorded) return;
+    _progressRecorded = true;
+    final score = _kcQuestions.isEmpty
+        ? 1.0
+        : _kcCorrect / _kcQuestions.length;
+    ProgressService.recordLessonComplete(
+      learnerId: ref.read(learnerIdProvider),
+      courseId: widget.courseId,
+      moduleIdx: _moduleIdx,
+      lessonIdx: _lessonIdx,
+      score: score,
+    ).catchError((_) {});
+  }
+
+  void _recordLessonWatched() {
+    if (_progressRecorded) return;
+    _progressRecorded = true;
+    ProgressService.recordLessonComplete(
+      learnerId: ref.read(learnerIdProvider),
+      courseId: widget.courseId,
+      moduleIdx: _moduleIdx,
+      lessonIdx: _lessonIdx,
+    ).catchError((_) {});
+  }
+
+  // ── Real video callbacks ───────────────────────────────────────────────────
+  // Called by _VideoBox once the VideoPlayerController is initialised.
+  void _onVideoDurationLoaded(int durationSecs) {
+    if (durationSecs > 0) setState(() => _realVideoDurationSecs = durationSecs);
+  }
+
+  // Called by _VideoBox when the video reaches its end.
+  void _onVideoEnded() {
+    if (!mounted) return;
+    final dur = _realVideoDurationSecs ?? 0;
+    setState(() {
+      _playing = false;
+      if (dur > 0) _posSecs = dur;
+    });
+    _ticker?.cancel();
+    _track('lesson_complete');
+    _recordLessonWatched();
+  }
+
+  // ── Render-poll management ─────────────────────────────────────────────────
+  void _onRendersChanged(List<VideoRenderJob>? renders) {
+    final hasPending = renders?.any(
+          (r) => r.status == 'pending' || r.status == 'processing') ??
+        false;
+    if (hasPending) {
+      _renderPollTimer ??= Timer.periodic(const Duration(seconds: 15), (_) {
+        if (mounted) ref.invalidate(videoRendersProvider(widget.courseId));
+      });
+    } else {
+      _renderPollTimer?.cancel();
+      _renderPollTimer = null;
+    }
   }
 
   // ── Analytics hook (real apps wire this to a service) ──────────────────────
@@ -128,32 +245,74 @@ class _LessonPlayerScreenState extends ConsumerState<LessonPlayerScreen> {
 
   // ── Playback ────────────────────────────────────────────────────────────────
   void _togglePlay() {
-    if (_showKCheck && !_kcDone) return;
+    if ((_showKCheck || _kcLoading) && !_kcDone) return;
     setState(() => _playing = !_playing);
     _track(_playing ? 'play' : 'pause');
     if (_playing) {
       _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
         if (!mounted) return;
         setState(() {
+          // Prefer real video duration once the controller has loaded.
           final lessons = ref.read(lessonsProvider);
-          final dur = _lesson(lessons)?.durationSecs ?? 540;
+          final dur = _realVideoDurationSecs
+              ?? _lesson(ref.read(courseLessonsProvider(widget.courseId)).valueOrNull ?? lessons)?.durationSecs
+              ?? _lesson(lessons)?.durationSecs
+              ?? 540;
           if (_posSecs < dur) {
             _posSecs++;
             if (!_kcDone && _posSecs == (dur * 0.25).round()) {
               _playing = false;
               _ticker?.cancel();
-              _showKCheck = true;
-              _track('knowledge_check_shown');
+              _track('knowledge_check_triggered');
+              _fetchAndShowKCheck();
             }
           } else {
+            // Ticker reached video end (fallback when real video doesn't fire onVideoEnded)
             _playing = false;
             _ticker?.cancel();
             _track('lesson_complete');
+            _recordLessonWatched();
           }
         });
       });
     } else {
       _ticker?.cancel();
+    }
+  }
+
+  // ── Knowledge-check fetch + show ───────────────────────────────────────────
+  Future<void> _fetchAndShowKCheck() async {
+    if (!mounted) return;
+    setState(() => _kcLoading = true);
+
+    try {
+      final questions = await QuestionService.generateForLesson(
+        courseId:     widget.courseId,
+        lessonId:     widget.lessonId,
+        count:        3,
+        timestampSecs: _posSecs,
+      );
+
+      if (!mounted) return;
+      if (questions.isEmpty) {
+        // No transcript / API key not set — skip silently and resume
+        setState(() { _kcLoading = false; _kcDone = true; });
+        _togglePlay();
+        return;
+      }
+      setState(() {
+        _kcLoading = false;
+        _kcQuestions = questions;
+        _kcQuestionIndex = 0;
+        _showKCheck = true;
+      });
+      _track('knowledge_check_shown', {'count': questions.length});
+    } catch (e) {
+      debugPrint('[KCheck] fetch failed: $e');
+      if (!mounted) return;
+      // On error resume silently — never block the learner
+      setState(() { _kcLoading = false; _kcDone = true; });
+      _togglePlay();
     }
   }
 
@@ -170,25 +329,38 @@ class _LessonPlayerScreenState extends ConsumerState<LessonPlayerScreen> {
   }
 
   void _onQuestionSubmit(QuestionResult result) {
-    setState(() {
-      _kcDone = true;
-      _showKCheck = false;
-      if (result.correct) {
-        _xp += 10;
-        _answered++;
-      }
+    _track('knowledge_check_answered', {
+      'correct': result.correct,
+      'mode': result.mode.name,
+      'index': _kcQuestionIndex,
     });
-    _track('knowledge_check_answered', {'correct': result.correct, 'mode': result.mode.name});
-    _togglePlay(); // resume video
+    _recordKcAttempt(_kcQuestions[_kcQuestionIndex], result);
+    if (result.correct) {
+      setState(() { _xp += 10; _answered++; _kcCorrect++; });
+    }
+    _advanceOrClose();
   }
 
   void _onQuestionSkip() {
-    setState(() {
-      _kcDone = true;
-      _showKCheck = false;
-    });
-    _track('knowledge_check_skipped');
-    _togglePlay(); // resume video
+    _track('knowledge_check_skipped', {'index': _kcQuestionIndex});
+    _advanceOrClose();
+  }
+
+  void _advanceOrClose() {
+    final nextIdx = _kcQuestionIndex + 1;
+    if (nextIdx < _kcQuestions.length) {
+      setState(() => _kcQuestionIndex = nextIdx);
+    } else {
+      _recordKcComplete(); // saves checkpoint score + weak topics
+      setState(() {
+        _kcDone = true;
+        _showKCheck = false;
+        _kcQuestions = [];
+        _kcQuestionIndex = 0;
+        _kcCorrect = 0;
+      });
+      _togglePlay(); // resume video after all questions done
+    }
   }
 
   // ── Notes CRUD ──────────────────────────────────────────────────────────────
@@ -322,11 +494,15 @@ class _LessonPlayerScreenState extends ConsumerState<LessonPlayerScreen> {
       return const Scaffold(body: Center(child: Text('Lesson not found')));
     }
 
+    // Record lesson start once the lesson object is available
+    WidgetsBinding.instance.addPostFrameCallback((_) => _initProgress(lesson));
+
     // Resolve course: try real API detail, fall back to mock list
     final courseAsync = ref.watch(courseDetailProvider(widget.courseId));
     final Course course;
-    if (courseAsync.valueOrNull != null) {
-      course = CourseService.courseFromDetail(courseAsync.value!);
+    final courseDetail = courseAsync.valueOrNull;
+    if (courseDetail != null && courseDetail.isNotEmpty) {
+      course = CourseService.courseFromDetail(courseDetail);
     } else {
       final mockCourses = ref.watch(coursesProvider);
       course = mockCourses.firstWhere(
@@ -335,7 +511,7 @@ class _LessonPlayerScreenState extends ConsumerState<LessonPlayerScreen> {
       );
     }
 
-    final dur = lesson.durationSecs;
+    final dur = _realVideoDurationSecs ?? lesson.durationSecs;
     final progress = dur > 0 ? _posSecs / dur : 0.0;
 
     final courseLessons = lessons.where((l) => l.courseId == widget.courseId).toList();
@@ -344,6 +520,52 @@ class _LessonPlayerScreenState extends ConsumerState<LessonPlayerScreen> {
     final hasNext = lessonIndex < courseLessons.length - 1;
     final isWide = MediaQuery.of(context).size.width > 900;
 
+    Widget? overlay;
+    if (_kcLoading) {
+      overlay = const _KCheckLoadingOverlay();
+    } else if (_showKCheck && _kcQuestions.isNotEmpty) {
+      overlay = InteractiveQuestionOverlay(
+        key: ValueKey(_kcQuestionIndex),
+        question: _kcQuestions[_kcQuestionIndex],
+        index:    _kcQuestionIndex + 1,
+        total:    _kcQuestions.length,
+        companionName: 'Arresto AI',
+        onSubmit: _onQuestionSubmit,
+        onSkip:   _onQuestionSkip,
+      );
+    }
+
+    // Poll backend while any render is pending/processing
+    ref.listen<AsyncValue<List<VideoRenderJob>>>(
+      videoRendersProvider(widget.courseId),
+      (_, next) => _onRendersChanged(next.valueOrNull),
+    );
+
+    // Resolve video URL and render status for this lesson
+    String? videoUrl;
+    String? videoRenderMessage;
+    final rendersAsync = ref.watch(videoRendersProvider(widget.courseId));
+    final renders = rendersAsync.valueOrNull;
+    if (renders != null) {
+      final ids = _parseIds(widget.lessonId);
+      final standardRef = 'module_${ids.$1}_lesson_${ids.$2}';
+      final customRef   = 'item_${ids.$2 - 1}'; // custom courses: item_0-based
+      final lessonRenders = renders.where(
+        (r) => r.lessonRef == standardRef || r.lessonRef == customRef,
+      ).toList();
+      final completed = lessonRenders.where((r) => r.videoReady).firstOrNull;
+      if (completed != null) {
+        videoUrl = '${ApiConfig.baseUrl}/api/v1/video/renders/${completed.renderId}/stream';
+      } else if (lessonRenders.isNotEmpty) {
+        final latest = lessonRenders.first;
+        if (latest.status == 'pending' || latest.status == 'processing') {
+          videoRenderMessage = 'Video is being generated — check back in a few minutes';
+        } else if (latest.status == 'failed') {
+          videoRenderMessage = 'Video is unavailable for this lesson.\nAn admin can re-generate it from the Admin panel.';
+        }
+      }
+    }
+
     final videoBox = _VideoBox(
       lesson: lesson, posSecs: _posSecs, dur: dur, progress: progress,
       playing: _playing, muted: _muted,
@@ -351,16 +573,12 @@ class _LessonPlayerScreenState extends ConsumerState<LessonPlayerScreen> {
       onSeekSecs: _seekTo, onToggleMute: _toggleMute,
       onNotesShortcut: () => setState(() => _activeTab = 'Notes'),
       onFullscreen: () => _toast('Fullscreen is not available in the preview build'),
-      questionOverlay: _showKCheck
-          ? InteractiveQuestionOverlay(
-              question: _kcQuestion,
-              index: 1,
-              total: 1,
-              companionName: 'Aria',
-              onSubmit: _onQuestionSubmit,
-              onSkip: _onQuestionSkip,
-            )
-          : null,
+      questionOverlay: overlay,
+      videoUrl: videoUrl,
+      renderMessage: videoRenderMessage,
+      onRefreshVideo: () => ref.invalidate(videoRendersProvider(widget.courseId)),
+      onDurationLoaded: _onVideoDurationLoaded,
+      onVideoEnded: _onVideoEnded,
     );
 
     final tabsSection = _TabsSection(
@@ -399,10 +617,15 @@ class _LessonPlayerScreenState extends ConsumerState<LessonPlayerScreen> {
       },
     );
 
+    final recommendations = ref
+        .watch(recommendationsProvider(widget.courseId))
+        .valueOrNull ?? const [];
+
     final sidebar = _RightSidebar(
       lesson: lesson, course: course, courseLessons: courseLessons,
       lessonIndex: lessonIndex, lessonProgress: progress,
       xp: _xp, answered: _answered, courseProgress: course.progress / 100,
+      recommendations: recommendations,
       onGoToQuiz: _goToQuiz,
       onAskAi: () => _openAI(),
       onSelectTool: (tab) => setState(() => _activeTab = tab),
@@ -545,8 +768,10 @@ class _PrevNextRow extends StatelessWidget {
   }
 }
 
-// ── Video box (simulated player) ──────────────────────────────────────────────
-class _VideoBox extends StatelessWidget {
+// ── Video box ─────────────────────────────────────────────────────────────────
+// Shows the actual HeyGen-rendered MP4 when [videoUrl] is provided; falls back
+// to the simulated dark-gradient player when no render is available yet.
+class _VideoBox extends StatefulWidget {
   final CourseLesson lesson;
   final int posSecs, dur;
   final double progress;
@@ -555,6 +780,11 @@ class _VideoBox extends StatelessWidget {
   final Function(int) onSeekSecs;
   final String Function(int) fmtSecs;
   final Widget? questionOverlay;
+  final String? videoUrl;
+  final String? renderMessage;
+  final VoidCallback? onRefreshVideo;
+  final void Function(int durationSecs)? onDurationLoaded;
+  final VoidCallback? onVideoEnded;
 
   const _VideoBox({
     required this.lesson, required this.posSecs, required this.dur,
@@ -563,7 +793,96 @@ class _VideoBox extends StatelessWidget {
     required this.onSeekSecs, required this.onToggleMute,
     required this.onNotesShortcut, required this.onFullscreen,
     this.questionOverlay,
+    this.videoUrl,
+    this.renderMessage,
+    this.onRefreshVideo,
+    this.onDurationLoaded,
+    this.onVideoEnded,
   });
+
+  @override
+  State<_VideoBox> createState() => _VideoBoxState();
+}
+
+class _VideoBoxState extends State<_VideoBox> {
+  VideoPlayerController? _vc;
+  bool _vcReady = false;
+  bool _videoEnded = false;
+  String? _loadedUrl;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.videoUrl != null) _initVideo(widget.videoUrl!);
+  }
+
+  @override
+  void didUpdateWidget(_VideoBox old) {
+    super.didUpdateWidget(old);
+    // Load (or reload) if the URL first appears or changes
+    if (widget.videoUrl != null && widget.videoUrl != _loadedUrl) {
+      _initVideo(widget.videoUrl!);
+      return;
+    }
+    if (_vc == null || !_vcReady) return;
+
+    // Sync play / pause
+    if (widget.playing != old.playing) {
+      widget.playing ? _vc!.play() : _vc!.pause();
+    }
+    // Sync mute
+    if (widget.muted != old.muted) {
+      _vc!.setVolume(widget.muted ? 0.0 : 1.0);
+    }
+    // Sync seek when parent position drifts > 3 s from the real video position
+    if (widget.posSecs != old.posSecs) {
+      final ctrlSecs = _vc!.value.position.inSeconds;
+      if ((ctrlSecs - widget.posSecs).abs() > 3) {
+        _vc!.seekTo(Duration(seconds: widget.posSecs));
+      }
+    }
+  }
+
+  Future<void> _initVideo(String url) async {
+    _loadedUrl = url;
+    _videoEnded = false;
+    final vc = VideoPlayerController.networkUrl(Uri.parse(url));
+    try {
+      await vc.initialize();
+      if (!mounted) { vc.dispose(); return; }
+      final old = _vc;
+      _vc = vc;
+      _vcReady = true;
+      // Report real duration to the parent so it can replace the mock value
+      final realDur = vc.value.duration.inSeconds;
+      if (realDur > 0) widget.onDurationLoaded?.call(realDur);
+      // Listen for video reaching its natural end
+      vc.addListener(_onControllerUpdate);
+      if (widget.playing) vc.play();
+      vc.setVolume(widget.muted ? 0.0 : 1.0);
+      setState(() {});
+      old?.dispose();
+    } catch (e) {
+      debugPrint('[VideoBox] init failed: $e');
+      vc.dispose();
+    }
+  }
+
+  void _onControllerUpdate() {
+    if (_videoEnded || _vc == null || !_vcReady) return;
+    final val = _vc!.value;
+    if (!val.isInitialized || val.duration.inMilliseconds == 0) return;
+    if (val.position >= val.duration && !val.isPlaying) {
+      _videoEnded = true;
+      widget.onVideoEnded?.call();
+    }
+  }
+
+  @override
+  void dispose() {
+    _vc?.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -573,19 +892,61 @@ class _VideoBox extends StatelessWidget {
         color: const Color(0xFF111111),
         child: Stack(
           children: [
-            Container(
-              decoration: const BoxDecoration(
-                gradient: LinearGradient(
-                  colors: [Color(0xFF1a1a1a), Color(0xFF0d0d0d)],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
+            // ── Background: real video or gradient fallback ──────────────────
+            if (_vcReady && _vc != null)
+              Positioned.fill(child: VideoPlayer(_vc!))
+            else
+              Container(
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [Color(0xFF1a1a1a), Color(0xFF0d0d0d)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
                 ),
+                child: widget.videoUrl == null
+                    ? Center(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              widget.renderMessage != null && widget.renderMessage!.contains('failed')
+                                  ? Icons.error_outline_rounded
+                                  : widget.renderMessage != null
+                                      ? Icons.hourglass_top_rounded
+                                      : Icons.videocam_off_rounded,
+                              color: Colors.white30,
+                              size: 40,
+                            ),
+                            const SizedBox(height: 10),
+                            Text(
+                              widget.renderMessage ?? 'Video not yet generated for this lesson',
+                              style: const TextStyle(color: Colors.white38, fontSize: 13),
+                              textAlign: TextAlign.center,
+                            ),
+                            if (widget.onRefreshVideo != null) ...[
+                              const SizedBox(height: 12),
+                              TextButton.icon(
+                                onPressed: widget.onRefreshVideo,
+                                icon: const Icon(Icons.refresh_rounded, size: 16, color: Colors.white38),
+                                label: const Text('Refresh', style: TextStyle(color: Colors.white38, fontSize: 12)),
+                              ),
+                            ],
+                          ],
+                        ),
+                      )
+                    : null,
               ),
-            ),
-            if (!playing && questionOverlay == null)
+
+            // Loading spinner while video initialises
+            if (widget.videoUrl != null && !_vcReady)
+              const Center(child: CircularProgressIndicator(color: ArrestoColors.amber, strokeWidth: 3)),
+
+            // Play button (centre) when paused and no overlay
+            if (!widget.playing && widget.questionOverlay == null)
               Center(
                 child: GestureDetector(
-                  onTap: onTogglePlay,
+                  onTap: widget.onTogglePlay,
                   child: Container(
                     width: 72, height: 72,
                     decoration: BoxDecoration(
@@ -597,11 +958,13 @@ class _VideoBox extends StatelessWidget {
                   ),
                 ),
               ),
-            if (playing)
+
+            // Pause button (top-right) when playing
+            if (widget.playing)
               Positioned(
                 right: 16, top: 16,
                 child: GestureDetector(
-                  onTap: onTogglePlay,
+                  onTap: widget.onTogglePlay,
                   child: Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
@@ -612,6 +975,8 @@ class _VideoBox extends StatelessWidget {
                   ),
                 ),
               ),
+
+            // Controls bar
             Positioned(
               bottom: 0, left: 0, right: 0,
               child: Container(
@@ -635,18 +1000,18 @@ class _VideoBox extends StatelessWidget {
                       overlayColor: ArrestoColors.amber.withValues(alpha: 0.3),
                     ),
                     child: Slider(
-                      value: progress.clamp(0.0, 1.0),
-                      onChanged: (v) => onSeekSecs((v * dur).round()),
+                      value: widget.progress.clamp(0.0, 1.0),
+                      onChanged: (v) => widget.onSeekSecs((v * widget.dur).round()),
                     ),
                   ),
                   Row(children: [
-                    _ctrl(Icons.replay_10_rounded, () => onSeekSecs(posSecs - 10)),
-                    _ctrl(playing ? Icons.pause_rounded : Icons.play_arrow_rounded, onTogglePlay),
-                    _ctrl(Icons.forward_10_rounded, () => onSeekSecs(posSecs + 10)),
-                    _ctrl(muted ? Icons.volume_off_rounded : Icons.volume_up_rounded, onToggleMute),
+                    _ctrl(Icons.replay_10_rounded, () => widget.onSeekSecs(widget.posSecs - 10)),
+                    _ctrl(widget.playing ? Icons.pause_rounded : Icons.play_arrow_rounded, widget.onTogglePlay),
+                    _ctrl(Icons.forward_10_rounded, () => widget.onSeekSecs(widget.posSecs + 10)),
+                    _ctrl(widget.muted ? Icons.volume_off_rounded : Icons.volume_up_rounded, widget.onToggleMute),
                     const SizedBox(width: 6),
                     Text(
-                      '${fmtSecs(posSecs)} / ${fmtSecs(dur)}',
+                      '${widget.fmtSecs(widget.posSecs)} / ${widget.fmtSecs(widget.dur)}',
                       style: const TextStyle(color: Colors.white70, fontSize: 12),
                     ),
                     const Spacer(),
@@ -654,13 +1019,14 @@ class _VideoBox extends StatelessWidget {
                     const SizedBox(width: 6),
                     _pill('CC'),
                     const SizedBox(width: 6),
-                    _ctrl(Icons.note_alt_outlined, onNotesShortcut),
-                    _ctrl(Icons.fullscreen_rounded, onFullscreen),
+                    _ctrl(Icons.note_alt_outlined, widget.onNotesShortcut),
+                    _ctrl(Icons.fullscreen_rounded, widget.onFullscreen),
                   ]),
                 ]),
               ),
             ),
-            if (questionOverlay != null) questionOverlay!,
+
+            if (widget.questionOverlay != null) widget.questionOverlay!,
           ],
         ),
       ),
@@ -1263,6 +1629,37 @@ class _RelatedLessonRow extends StatelessWidget {
   }
 }
 
+// ── Knowledge-check loading overlay ──────────────────────────────────────────
+class _KCheckLoadingOverlay extends StatelessWidget {
+  const _KCheckLoadingOverlay();
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned.fill(
+      child: Container(
+        color: Colors.black.withValues(alpha: 0.55),
+        child: Center(
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
+            decoration: BoxDecoration(
+              color: ArrestoColors.surface,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              const CircularProgressIndicator(color: ArrestoColors.amber, strokeWidth: 3),
+              const SizedBox(height: 14),
+              Text('Generating knowledge check…', style: ArrestoText.bodyBold()),
+              const SizedBox(height: 4),
+              Text('Arresto AI is reading the lesson',
+                  style: ArrestoText.small(color: ArrestoColors.textMuted)),
+            ]),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 // ── Right sidebar ─────────────────────────────────────────────────────────────
 class _RightSidebar extends StatelessWidget {
   final CourseLesson lesson;
@@ -1271,14 +1668,15 @@ class _RightSidebar extends StatelessWidget {
   final int lessonIndex;
   final double lessonProgress, courseProgress;
   final int xp, answered;
+  final List<Recommendation> recommendations;
   final VoidCallback onGoToQuiz, onAskAi;
   final Function(String) onSelectTool;
 
   const _RightSidebar({
     required this.lesson, required this.course, required this.courseLessons,
     required this.lessonIndex, required this.lessonProgress, required this.courseProgress,
-    required this.xp, required this.answered, required this.onGoToQuiz,
-    required this.onAskAi, required this.onSelectTool,
+    required this.xp, required this.answered, required this.recommendations,
+    required this.onGoToQuiz, required this.onAskAi, required this.onSelectTool,
   });
 
   @override
@@ -1395,6 +1793,41 @@ class _RightSidebar extends StatelessWidget {
             }),
           ]),
         ),
+        if (recommendations.isNotEmpty) ...[
+          const SizedBox(height: 14),
+          ArrestoCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(children: [
+                  const Icon(Icons.flag_rounded, size: 16, color: ArrestoColors.orange),
+                  const SizedBox(width: 8),
+                  Text('Focus areas', style: ArrestoText.bodyBold()),
+                ]),
+                const SizedBox(height: 10),
+                ...recommendations.take(4).map((r) => Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(
+                        r.type == 'weak_topic'
+                            ? Icons.warning_amber_rounded
+                            : Icons.replay_rounded,
+                        size: 14,
+                        color: ArrestoColors.orange,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(r.message, style: ArrestoText.small()),
+                      ),
+                    ],
+                  ),
+                )),
+              ],
+            ),
+          ),
+        ],
       ]),
     );
   }

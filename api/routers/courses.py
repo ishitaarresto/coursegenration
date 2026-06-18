@@ -10,6 +10,10 @@ GET    /api/v1/courses/library/{script_id}   Retrieve a saved course script in f
 DELETE /api/v1/courses/library/{script_id}   Delete a saved course script
 """
 
+import asyncio
+import json as _json
+import re as _re
+
 from fastapi import APIRouter, BackgroundTasks, Body, Depends, Form, HTTPException
 
 from api.config import settings
@@ -23,9 +27,133 @@ from api.dependencies import (
 from api.schemas import (
     CourseGenerateRequest, CourseGenerateResponse, CourseJobStatus, ErrorDetail,
     AssessmentConfigRequest, PublishRequest,
+    AssessmentAttemptRequest, AssessmentAttemptItem,
 )
 
 router = APIRouter(prefix="/api/v1/courses", tags=["Course Generation"])
+
+_ASSESSMENT_SYSTEM = (
+    "You are an expert instructional designer for safety and industrial training. "
+    "Your job is to create an engaging assessment quiz that mixes multiple-choice and "
+    "true/false questions. Aim for roughly 70% multiple-choice and 30% true/false. "
+    "If the course instructions already contain explicit quiz or assessment questions, "
+    "extract and use THOSE as the primary source — do not invent new ones when the admin "
+    "has provided them. Format them into the required structure. "
+    "Generate additional questions from course content only to reach the target count. "
+    "Always return valid JSON with no markdown, no explanation, just the JSON object."
+)
+
+_ASSESSMENT_SCHEMA = """
+Return ONLY a JSON object with this exact structure (no markdown, no explanation).
+Mix multiple-choice and true/false questions (roughly 70% MCQ, 30% true/false).
+
+{
+  "questions": [
+    {
+      "type": "mcq",
+      "question": "Question text here?",
+      "options": {
+        "A": "First option text",
+        "B": "Second option text",
+        "C": "Third option text",
+        "D": "Fourth option text"
+      },
+      "correct_answer": "A",
+      "explanation": "Brief explanation of why A is correct."
+    },
+    {
+      "type": "true_false",
+      "question": "A clear statement that is definitively true or false?",
+      "options": {
+        "A": "True",
+        "B": "False"
+      },
+      "correct_answer": "A",
+      "explanation": "Brief explanation of why this statement is true."
+    }
+  ]
+}
+
+Rules:
+- type must be exactly "mcq" or "true_false"
+- For mcq: options must have exactly A, B, C, D; correct_answer is one of A/B/C/D
+- For true_false: options must be exactly {"A": "True", "B": "False"}; correct_answer is "A" or "B"
+- True/false questions must be clear factual statements, not ambiguous opinions
+- Each question must be directly answerable from the course content
+"""
+
+
+def _build_course_summary(course_script: dict) -> str:
+    """Build a compact text summary of course content for the LLM."""
+    modules = course_script.get("modules", [])
+    items   = course_script.get("items", [])
+    lines   = []
+    if modules:
+        for mod in modules:
+            lines.append(f"## {mod.get('module_title', 'Module')}")
+            for les in mod.get("lessons", []):
+                title     = les.get("lesson_title", "")
+                narration = (les.get("narration_script", "") or "")[:600]
+                lines.append(f"  Lesson: {title}")
+                if narration:
+                    lines.append(f"  {narration}")
+    elif items:
+        for item in items:
+            title     = item.get("title", "")
+            narration = (item.get("narration") or item.get("narration_script") or "")[:600]
+            lines.append(f"- {title}: {narration}")
+    return "\n".join(lines)[:8000]
+
+
+def _generate_assessment_questions_sync(
+    instructions:  str | None,
+    course_script: dict,
+    num_questions: int,
+    api_key:       str,
+) -> list[dict]:
+    import anthropic
+
+    course_summary = _build_course_summary(course_script)
+    course_title   = course_script.get("course_title", "")
+
+    instructions_block = (
+        f"INSTRUCTIONS / DESCRIPTION FROM COURSE DESIGNER:\n{instructions}\n\n"
+        if instructions else ""
+    )
+
+    user_msg = (
+        f"Course: {course_title}\n\n"
+        f"{instructions_block}"
+        f"COURSE CONTENT SUMMARY:\n{course_summary}\n\n"
+        f"Generate exactly {num_questions} assessment questions (mix of MCQ and true/false).\n"
+        f"IMPORTANT: If the instructions above already contain quiz questions, "
+        f"extract and format THOSE first before generating new ones.\n\n"
+        f"{_ASSESSMENT_SCHEMA}"
+    )
+
+    client = anthropic.Anthropic(api_key=api_key)
+    resp   = client.messages.create(
+        model=settings.llm_model,
+        max_tokens=4000,
+        system=_ASSESSMENT_SYSTEM,
+        messages=[{"role": "user", "content": user_msg}],
+    )
+    raw = resp.content[0].text.strip()
+    raw = _re.sub(r'^```(?:json)?\s*', '', raw)
+    raw = _re.sub(r'\s*```$', '', raw)
+
+    data      = _json.loads(raw)
+    questions = []
+    for i, q in enumerate(data.get("questions", []), start=1):
+        questions.append({
+            "id":             f"aq_{i}",
+            "type":           q.get("type", "mcq"),
+            "question":       q["question"],
+            "options":        q["options"],
+            "correct_answer": q["correct_answer"],
+            "explanation":    q.get("explanation", ""),
+        })
+    return questions
 
 
 def _start_course_job(
@@ -288,3 +416,134 @@ def delete_library_script(script_id: str):
     if not existed:
         raise HTTPException(status_code=404, detail=f"Script '{script_id}' not found in library.")
     return {"message": f"Script '{script_id}' deleted."}
+
+
+@router.get("/library/{script_id}/assessment-questions", tags=["Course Library"])
+async def get_assessment_questions(script_id: str, regenerate: bool = False):
+    """
+    Return assessment quiz questions for a course.
+
+    Questions are generated from the course instructions (which may contain
+    explicit quiz questions written by the admin) plus the full course script.
+    Results are cached in the DB — pass ?regenerate=true to force a fresh run.
+    """
+    record = library.get(script_id)
+    if not record:
+        raise HTTPException(status_code=404, detail=f"Script '{script_id}' not found.")
+
+    if not regenerate:
+        cached = library.get_assessment_questions(script_id)
+        if cached:
+            return {"questions": cached, "cached": True}
+
+    if not settings.anthropic_api_key:
+        raise HTTPException(
+            status_code=503,
+            detail="ANTHROPIC_API_KEY not configured — assessment generation unavailable.",
+        )
+
+    num_questions = record.get("assessment_num_questions", 5)
+
+    try:
+        questions = await asyncio.to_thread(
+            _generate_assessment_questions_sync,
+            record.get("instructions"),
+            record["course_script"],
+            num_questions,
+            settings.anthropic_api_key,
+        )
+    except _json.JSONDecodeError as exc:
+        raise HTTPException(status_code=500, detail=f"LLM returned invalid JSON: {exc}")
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Assessment generation failed: {exc}")
+
+    library.save_assessment_questions(script_id, questions)
+    return {"questions": questions, "cached": False}
+
+
+@router.post("/library/{script_id}/assessment-attempts", tags=["Course Library"],
+             status_code=201)
+async def save_assessment_attempt(script_id: str, req: AssessmentAttemptRequest):
+    """
+    Record a completed assessment attempt for a learner.
+    Called by the Flutter app immediately after the learner submits the quiz.
+    """
+    import uuid
+    import time as _time
+    from api.db import SessionLocal
+    from api.models.progress import AssessmentAttemptRow
+
+    record = library.get(script_id)
+    if not record:
+        raise HTTPException(status_code=404, detail=f"Script '{script_id}' not found.")
+
+    with SessionLocal() as db:
+        row = AssessmentAttemptRow(
+            id=str(uuid.uuid4()),
+            learner_id=req.learner_id,
+            script_id=script_id,
+            score=req.score,
+            correct=req.correct,
+            total=req.total,
+            passed=1 if req.passed else 0,
+            elapsed_seconds=req.elapsed_seconds,
+            answers_json=_json.dumps(req.answers, ensure_ascii=False),
+            taken_at=_time.time(),
+        )
+        db.add(row)
+        db.commit()
+
+    if req.passed:
+        try:
+            from api.notification_store import push as _notif
+            course_title = (record.get("course_title") or script_id)
+            _notif(
+                req.learner_id,
+                "Certificate Earned",
+                f'You passed "{course_title}" with {req.score}%! Your certificate is ready.',
+                "🎓",
+                "certificate_earned",
+            )
+        except Exception:
+            pass
+
+    return {"message": "Attempt saved.", "id": row.id}
+
+
+@router.get("/library/{script_id}/assessment-attempts", tags=["Course Library"],
+            response_model=dict)
+def get_assessment_attempts(script_id: str, learner_id: str):
+    """
+    Retrieve all assessment attempts for a learner on a course, newest first.
+    """
+    from api.db import SessionLocal
+    from api.models.progress import AssessmentAttemptRow
+    from sqlalchemy import desc
+
+    record = library.get(script_id)
+    if not record:
+        raise HTTPException(status_code=404, detail=f"Script '{script_id}' not found.")
+
+    with SessionLocal() as db:
+        rows = (
+            db.query(AssessmentAttemptRow)
+            .filter(
+                AssessmentAttemptRow.script_id == script_id,
+                AssessmentAttemptRow.learner_id == learner_id,
+            )
+            .order_by(desc(AssessmentAttemptRow.taken_at))
+            .all()
+        )
+        attempts = [
+            AssessmentAttemptItem(
+                id=r.id,
+                score=r.score,
+                correct=r.correct,
+                total=r.total,
+                passed=bool(r.passed),
+                elapsed_seconds=r.elapsed_seconds,
+                taken_at=r.taken_at,
+            ).model_dump()
+            for r in rows
+        ]
+    return {"attempts": attempts, "total": len(attempts)}

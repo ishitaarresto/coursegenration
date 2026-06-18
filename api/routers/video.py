@@ -10,10 +10,13 @@ GET    /api/v1/video/languages                     Supported languages + TTS eng
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
-from fastapi import APIRouter, BackgroundTasks, HTTPException
-from fastapi.responses import FileResponse
+import asyncio
+
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from api.config import settings
@@ -23,6 +26,37 @@ from modules.video.render_engine import render_item_in_background, render_lesson
 
 # Styles that require a HeyGen API key — must match render_engine._HEYGEN_STYLES
 _HEYGEN_STYLES = frozenset({"animated_scene", "whiteboard_doodle", "hybrid"})
+
+# Map human-readable language names (stored in course_scripts.language) to BCP-47 codes.
+# Used to auto-select the correct TTS voice when the frontend sends the default lang=en.
+_LANG_NAME_TO_CODE: dict[str, str] = {
+    "english":    "en",
+    "hindi":      "hi",
+    "tamil":      "ta",
+    "telugu":     "te",
+    "bengali":    "bn",
+    "gujarati":   "gu",
+    "kannada":    "kn",
+    "malayalam":  "ml",
+    "marathi":    "mr",
+    "punjabi":    "pa",
+    "odia":       "od",
+    "oriya":      "od",
+    "urdu":       "ur",
+}
+
+
+def _resolve_lang(requested_lang: str, record: dict) -> str:
+    """Return the correct BCP-47 lang code for a render job.
+
+    If the caller sent the default 'en' but the stored course language is
+    different (e.g. 'Hindi'), return the proper code ('hi') so TTS selects
+    the right engine and voice automatically.
+    """
+    if requested_lang != "en":
+        return requested_lang          # caller was explicit — respect it
+    stored = (record.get("language") or "").strip().lower()
+    return _LANG_NAME_TO_CODE.get(stored, requested_lang)
 
 router = APIRouter(prefix="/api/v1/video", tags=["Video Rendering"])
 
@@ -175,11 +209,16 @@ async def render_video(
             "modern, flatcolor, whiteboard.",
         )
 
+    # Auto-resolve language: if caller sent default 'en' but the course was
+    # generated in Hindi/Tamil/etc., switch to the correct BCP-47 code so
+    # TTS picks the right voice.
+    resolved_lang = _resolve_lang(request.lang, record)
+
     # ── Create job + queue background task ──────────────────────────────────────
     job = video_job_store.create(
         script_id=request.script_id,
         lesson_ref=lesson_ref,
-        lang=request.lang,
+        lang=resolved_lang,
         style=request.style,
     )
 
@@ -199,6 +238,127 @@ async def render_video(
     )
 
 
+@router.post("/generate-all/{script_id}", status_code=202)
+async def generate_all_videos(
+    script_id: str,
+    background_tasks: BackgroundTasks,
+    style: str = "modern",
+    lang:  str = "en",
+):
+    """
+    Trigger video renders for every lesson in a course in one call.
+
+    Creates one background render job per lesson (or per slide item for
+    custom courses) and returns immediately.  Poll individual job IDs via
+    GET /api/v1/video/renders/{render_id}.
+
+    Lessons that already have a completed render for the same lang are
+    skipped automatically, so this endpoint is safe to call multiple times
+    to resume a partially-generated course.
+
+    Style defaults to `modern` (free animated renderer).
+    Pass style=animated_scene to use HeyGen (requires HEYGEN_API_KEY in .env).
+    """
+    if style in _HEYGEN_STYLES and not settings.heygen_api_key:
+        raise HTTPException(
+            400,
+            f"Style '{style}' requires HEYGEN_API_KEY in .env. "
+            "Set it or pass style=modern for the free renderer.",
+        )
+
+    record = _get_script_or_404(script_id)
+    course = record.get("course_script", {})
+
+    # Auto-resolve language from the stored course language when caller sent
+    # the default 'en' but the course was generated in Hindi/Tamil/etc.
+    lang = _resolve_lang(lang, record)
+
+    # Skip lessons that already have a completed or in-progress render for this lang.
+    # Failed renders are NOT skipped so re-calling generate-all re-tries them.
+    active_refs = {
+        j.lesson_ref
+        for j in video_job_store.list_for_script(script_id)
+        if j.status in ("completed", "pending", "processing") and j.lang == lang
+    }
+
+    jobs_created: list[dict] = []
+    jobs_skipped: list[str]  = []
+
+    # For HeyGen styles stagger submits by 3 s each so the API isn't hit all at once.
+    _heygen_stagger = 3.0 if style in _HEYGEN_STYLES else 0.0
+
+    async def _staggered_lesson(job, les, delay: float) -> None:
+        if delay:
+            await asyncio.sleep(delay)
+        await render_lesson_in_background(job, les)
+
+    async def _staggered_item(job, item, delay: float) -> None:
+        if delay:
+            await asyncio.sleep(delay)
+        await render_item_in_background(job, item)
+
+    modules = course.get("modules", [])
+    if modules:
+        # Standard course — one job per lesson
+        job_index = 0
+        for mod in modules:
+            m_num = int(mod.get("module_number", 1))
+            for les in mod.get("lessons", []):
+                l_num = int(les.get("lesson_number", 1))
+                lesson_ref = f"module_{m_num}_lesson_{l_num}"
+                if lesson_ref in active_refs:
+                    jobs_skipped.append(lesson_ref)
+                    continue
+                job = video_job_store.create(
+                    script_id=script_id,
+                    lesson_ref=lesson_ref,
+                    lang=lang,
+                    style=style,
+                )
+                background_tasks.add_task(
+                    _staggered_lesson, job, les, job_index * _heygen_stagger
+                )
+                jobs_created.append(
+                    {"render_id": job.render_id, "lesson_ref": lesson_ref}
+                )
+                job_index += 1
+    else:
+        # Custom / blueprint course — one job per renderable item
+        job_index = 0
+        for i, item in enumerate(course.get("items", [])):
+            if item.get("type") not in ("slide", "closing_slide"):
+                continue
+            lesson_ref = f"item_{i}"
+            if lesson_ref in active_refs:
+                jobs_skipped.append(lesson_ref)
+                continue
+            job = video_job_store.create(
+                script_id=script_id,
+                lesson_ref=lesson_ref,
+                lang=lang,
+                style=style,
+            )
+            background_tasks.add_task(
+                _staggered_item, job, item, job_index * _heygen_stagger
+            )
+            jobs_created.append(
+                {"render_id": job.render_id, "lesson_ref": lesson_ref}
+            )
+            job_index += 1
+
+    if not jobs_created and not jobs_skipped:
+        raise HTTPException(400, "No renderable lessons found in this course script.")
+
+    return {
+        "script_id":    script_id,
+        "style":        style,
+        "lang":         lang,
+        "jobs_started": len(jobs_created),
+        "jobs_skipped": len(jobs_skipped),
+        "jobs":         jobs_created,
+    }
+
+
 @router.get("/renders/{render_id}", response_model=VideoRenderStatus)
 def get_render_status(render_id: str):
     """Poll the status of a video render job."""
@@ -208,13 +368,79 @@ def get_render_status(render_id: str):
     return _job_to_status(job)
 
 
+@router.get("/renders/{render_id}/stream")
+def stream_video(render_id: str, request: Request):
+    """
+    Stream the rendered MP4 for inline <video> playback.
+    Supports HTTP Range requests (206 Partial Content) so the Flutter
+    video_player / browser can seek without re-downloading the whole file.
+    """
+    job = video_job_store.get(render_id)
+    if not job:
+        raise HTTPException(404, f"Render job '{render_id}' not found.")
+    if job.status != "completed":
+        raise HTTPException(
+            409,
+            f"Video is not ready yet (status={job.status}). "
+            "Poll /renders/{render_id} and retry when status=='completed'.",
+        )
+    if not job.video_path or not Path(job.video_path).exists():
+        raise HTTPException(500, "Video file not found on disk.")
+
+    path      = Path(job.video_path)
+    file_size = path.stat().st_size
+    range_hdr = request.headers.get("range", "")
+
+    m = re.match(r"bytes=(\d+)-(\d*)", range_hdr) if range_hdr else None
+    if m:
+        start = int(m.group(1))
+        end   = int(m.group(2)) if m.group(2) else file_size - 1
+        end   = min(end, file_size - 1)
+        if start >= file_size:
+            raise HTTPException(
+                416,
+                "Range Not Satisfiable",
+                headers={"Content-Range": f"bytes */{file_size}"},
+            )
+        length = end - start + 1
+
+        def _iter_range():
+            with open(path, "rb") as f:
+                f.seek(start)
+                remaining = length
+                while remaining > 0:
+                    chunk = f.read(min(65536, remaining))
+                    if not chunk:
+                        break
+                    remaining -= len(chunk)
+                    yield chunk
+
+        return StreamingResponse(
+            _iter_range(),
+            status_code=206,
+            media_type="video/mp4",
+            headers={
+                "Content-Range":  f"bytes {start}-{end}/{file_size}",
+                "Content-Length": str(length),
+                "Accept-Ranges":  "bytes",
+            },
+        )
+
+    # Full file response (no Range header) — still advertise range support
+    return FileResponse(
+        path=str(path),
+        media_type="video/mp4",
+        headers={
+            "Accept-Ranges":  "bytes",
+            "Content-Length": str(file_size),
+        },
+    )
+
+
 @router.get("/renders/{render_id}/download")
 def download_video(render_id: str):
     """
-    Download the rendered MP4 when `status == "completed"`.
-
-    Returns a streaming MP4 response suitable for browser `<video>` playback
-    or saving to disk.
+    Download the rendered MP4 as a file attachment.
     """
     job = video_job_store.get(render_id)
     if not job:
@@ -239,7 +465,6 @@ def download_video(render_id: str):
 @router.get("/scripts/{script_id}/renders")
 def list_script_renders(script_id: str):
     """List all render jobs for a course script."""
-    _get_script_or_404(script_id)   # validate script exists
     jobs = video_job_store.list_for_script(script_id)
     return {
         "script_id": script_id,

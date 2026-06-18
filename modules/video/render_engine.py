@@ -151,6 +151,18 @@ def _do_render(
         job.video_path  = str(mp4_path.resolve())
         job.status      = "completed"
         job.finished_at = time.time()
+
+        try:
+            from api.notification_store import push as _notif
+            _notif(
+                "admin",
+                "Video Ready",
+                f'Lesson "{job.lesson_ref}" rendered successfully.',
+                "🎬",
+                "video_rendered",
+            )
+        except Exception:
+            pass
     except Exception as exc:
         job.status      = "failed"
         job.error       = str(exc)

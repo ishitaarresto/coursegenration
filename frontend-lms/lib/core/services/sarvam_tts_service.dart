@@ -88,6 +88,36 @@ class SarvamTtsPlayer {
     }
   }
 
+  /// Play audio directly from a URL — used when the backend already generated
+  /// the TTS during a voice round-trip, so no extra HTTP call is needed.
+  void playUrl(String url) {
+    stop(); // cancel any current audio, increments _gen
+    final gen = ++_gen;
+
+    final audio = html.AudioElement()..src = url;
+    _audio = audio;
+
+    audio.onEnded.listen((_) {
+      if (_gen == gen) {
+        _speaking = false;
+        _paused  = false;
+        _notify();
+      }
+    });
+    audio.onError.listen((_) {
+      if (_gen == gen) {
+        _speaking = false;
+        _paused  = false;
+        _notify();
+      }
+    });
+
+    audio.play();
+    _speaking = true;
+    _paused  = false;
+    _notify();
+  }
+
   void pause() {
     if (_speaking && !_paused) {
       _audio?.pause();

@@ -6,6 +6,7 @@ import '../../../core/theme/typography.dart';
 import '../../../core/theme/spacing.dart';
 import '../../../core/widgets/avatar.dart';
 import '../../../data/providers/app_state.dart';
+import '../../../data/providers/api_providers.dart';
 import '../notifications/notification_panel.dart';
 
 class AppHeader extends ConsumerStatefulWidget {
@@ -42,8 +43,13 @@ class _AppHeaderState extends ConsumerState<AppHeader> {
   @override
   Widget build(BuildContext context) {
     final role = ref.watch(roleProvider);
-    final notifications = ref.watch(notificationsProvider);
-    final unread = notifications.where((n) => !n.read).length;
+    final learnerId = ref.watch(learnerIdProvider);
+    final profileAsync = ref.watch(profileProvider(learnerId));
+    final displayName = profileAsync.valueOrNull?.displayName ?? learnerId;
+
+    final recipientId = role == UserRole.admin ? 'admin' : learnerId;
+    final notifsAsync = ref.watch(notificationsProvider(recipientId));
+    final unread = notifsAsync.valueOrNull?.where((n) => !n.read).length ?? 0;
 
     return Container(
       height: ArrestoSpacing.headerHeight,
@@ -147,6 +153,7 @@ class _AppHeaderState extends ConsumerState<AppHeader> {
                       child: _ProfileDropdown(
                         onClose: _profileController.hide,
                         role: role,
+                        displayName: displayName,
                       ),
                     ),
                   ),
@@ -154,7 +161,7 @@ class _AppHeaderState extends ConsumerState<AppHeader> {
               ),
               child: GestureDetector(
                 onTap: _toggleProfile,
-                child: const ArrestoAvatar(name: 'James Harrington', size: 32),
+                child: ArrestoAvatar(name: displayName, size: 32),
               ),
             ),
           ),
@@ -169,7 +176,8 @@ class _AppHeaderState extends ConsumerState<AppHeader> {
 class _ProfileDropdown extends StatelessWidget {
   final VoidCallback onClose;
   final UserRole role;
-  const _ProfileDropdown({required this.onClose, required this.role});
+  final String displayName;
+  const _ProfileDropdown({required this.onClose, required this.role, required this.displayName});
 
   @override
   Widget build(BuildContext context) {
@@ -188,13 +196,13 @@ class _ProfileDropdown extends StatelessWidget {
             padding: const EdgeInsets.all(16),
             child: Row(
               children: [
-                const ArrestoAvatar(name: 'James Harrington', size: 40),
+                ArrestoAvatar(name: displayName, size: 40),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('James Harrington', style: ArrestoText.bodyBold()),
+                      Text(displayName, style: ArrestoText.bodyBold()),
                       Text(
                         role == UserRole.admin ? 'Administrator' : 'Learner',
                         style: ArrestoText.xs(),

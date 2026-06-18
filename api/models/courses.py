@@ -39,3 +39,5 @@ class CourseScriptRow(Base):
     assessment_pass_pct:       Mapped[int]  = Column(Integer, nullable=False, default=70)
     assessment_time_min:       Mapped[int]  = Column(Integer, nullable=False, default=30)
     assessment_retakes:        Mapped[int]  = Column(Integer, nullable=False, default=3)
+    # Cached assessment questions JSON (generated from instructions + course content)
+    assessment_questions_json: Mapped[str | None] = Column(String)

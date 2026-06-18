@@ -4,7 +4,6 @@ import '../models/learner.dart';
 import '../models/lesson.dart';
 import '../models/question.dart';
 import '../models/ticket.dart';
-import '../models/notification_model.dart';
 import '../../core/widgets/course_thumb.dart';
 
 // ─── Role ────────────────────────────────────────────────────────────────────
@@ -347,79 +346,6 @@ class TicketsNotifier extends StateNotifier<List<Ticket>> {
         else
           t
     ];
-  }
-}
-
-// ─── Notifications ────────────────────────────────────────────────────────────
-final notificationsProvider =
-    StateNotifierProvider<NotificationsNotifier, List<NotificationModel>>(
-        (ref) => NotificationsNotifier());
-
-class NotificationsNotifier extends StateNotifier<List<NotificationModel>> {
-  NotificationsNotifier()
-      : super([
-          NotificationModel(
-            id: 'n1',
-            icon: '🎓',
-            title: 'Certificate Available',
-            body: 'Your certificate for Harness Inspection & Fit is ready.',
-            time: '2h ago',
-            read: false,
-            role: 'learner',
-          ),
-          NotificationModel(
-            id: 'n2',
-            icon: '📋',
-            title: 'Assessment Due',
-            body: 'Working at Heights assessment is due in 3 days.',
-            time: '5h ago',
-            read: false,
-            role: 'learner',
-          ),
-          NotificationModel(
-            id: 'n3',
-            icon: '🤖',
-            title: 'Course Generated',
-            body: 'Scaffolding Safety course has been generated successfully.',
-            time: '1d ago',
-            read: true,
-            role: 'admin',
-          ),
-          NotificationModel(
-            id: 'n4',
-            icon: '🎫',
-            title: 'New Support Ticket',
-            body: 'TK-1042: James Harrington cannot access their certificate.',
-            time: '3h ago',
-            read: false,
-            role: 'admin',
-          ),
-        ]);
-
-  void markAllRead() {
-    state = state.map((n) => NotificationModel(
-          id: n.id,
-          icon: n.icon,
-          title: n.title,
-          body: n.body,
-          time: n.time,
-          read: true,
-          role: n.role,
-        )).toList();
-  }
-
-  void markRead(String id) {
-    state = state.map((n) => n.id == id
-        ? NotificationModel(
-            id: n.id,
-            icon: n.icon,
-            title: n.title,
-            body: n.body,
-            time: n.time,
-            read: true,
-            role: n.role,
-          )
-        : n).toList();
   }
 }
 

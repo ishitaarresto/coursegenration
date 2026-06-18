@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/services/course_service.dart';
+import '../../../core/services/video_service.dart';
 import '../../../core/theme/colors.dart';
 import '../../../core/theme/typography.dart';
 import '../../../core/widgets/button.dart';
@@ -35,12 +36,30 @@ class _CourseGeneratorWizardState
   // Step 1: Sources
   String? _selectedDoc;
 
+  // Step 4: Style — video render style id
+  String _videoStyle = 'modern';
+
   // Step 5: Language
   String _language = 'English';
 
   // Course script output
   Map<String, dynamic>? _courseScript;
   String? _scriptId;
+
+  // Language display name → BCP-47 code
+  static const _langCode = {
+    'English':   'en',
+    'Hindi':     'hi',
+    'Tamil':     'ta',
+    'Telugu':    'te',
+    'Kannada':   'kn',
+    'Malayalam': 'ml',
+    'Bengali':   'bn',
+    'Marathi':   'mr',
+    'Gujarati':  'gu',
+    'Punjabi':   'pa',
+    'Odia':      'od',
+  };
 
   // Step 8: Publish settings (lifted so the bottom-bar button can read them)
   String _publishModeName   = 'Publish Now';
@@ -50,6 +69,7 @@ class _CourseGeneratorWizardState
   String _assignLabel       = 'All Active Learners';
   bool   _publishing        = false;
   bool   _published         = false;
+  bool   _videoQueued       = false;
 
   String get _publishModeApi => switch (_publishModeName) {
         'Save as Draft' => 'draft',
@@ -73,7 +93,30 @@ class _CourseGeneratorWizardState
         requireCompletion: _requireCompletion,
         assignTo:          _assignTo,
       );
-      if (mounted) setState(() { _published = true; _publishing = false; });
+      if (!mounted) return;
+      setState(() { _published = true; _publishing = false; });
+
+      // Queue video generation for all lessons (fire-and-forget)
+      if (_publishModeApi != 'draft') {
+        final langCode = _langCode[_language] ?? 'en';
+        VideoService.generateAll(_scriptId!, style: _videoStyle, lang: langCode)
+            .then((count) {
+          if (!mounted) return;
+          setState(() => _videoQueued = true);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Video generation started for $count lesson(s) — style: $_videoStyle, lang: $langCode'),
+              duration: const Duration(seconds: 5),
+            ),
+          );
+        }).catchError((Object e) {
+          debugPrint('[VideoGen] failed to queue: $e');
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Course published, but video generation failed: $e')),
+          );
+        });
+      }
     } catch (e) {
       if (!mounted) return;
       setState(() => _publishing = false);
@@ -250,11 +293,13 @@ class _CourseGeneratorWizardState
                   )
                 else
                   ArrestoButton(
-                    label: _published
-                        ? 'Published!'
-                        : _publishing
-                            ? 'Publishing…'
-                            : 'Publish Course',
+                    label: _videoQueued
+                        ? 'Published · Videos queued!'
+                        : _published
+                            ? 'Published!'
+                            : _publishing
+                                ? 'Publishing…'
+                                : 'Publish Course',
                     variant: _published
                         ? ArrestoButtonVariant.ghost
                         : ArrestoButtonVariant.dark,
@@ -307,7 +352,10 @@ class _CourseGeneratorWizardState
           onComplete: (script) => setState(() => _courseScript = script),
           onScriptId: (id) => setState(() { _scriptId = id; _published = false; }),
         ),
-      4 => _StepStyle(),
+      4 => _StepStyle(
+          initialStyle: _videoStyle,
+          onStyleChanged: (s) => setState(() => _videoStyle = s),
+        ),
       5 => _StepLanguage(
           language: _language,
           onLanguageChanged: (v) => setState(() => _language = v),
@@ -1304,6 +1352,10 @@ class _CourseOutline extends StatelessWidget {
 // ── Step 5: Style ─────────────────────────────────────────────────────────────
 
 class _StepStyle extends StatefulWidget {
+  final String initialStyle;
+  final ValueChanged<String> onStyleChanged;
+  const _StepStyle({required this.initialStyle, required this.onStyleChanged});
+
   @override
   State<_StepStyle> createState() => _StepStyleState();
 }
@@ -1311,15 +1363,23 @@ class _StepStyle extends StatefulWidget {
 class _StepStyleState extends State<_StepStyle> {
   int _selected = 0;
 
+  // (display label, description, CourseStyle, video style id)
   static const _styles = [
-    ('Animated Scene', 'Professional animated video with voiceover',
-        CourseStyle.animated),
-    ('Whiteboard', 'Hand-drawn whiteboard style animation',
-        CourseStyle.whiteboard),
-    ('AI Presenter', 'Realistic AI presenter with background',
-        CourseStyle.claude),
-    ('Hybrid', 'Mix of animated and live action', CourseStyle.hybrid),
+    ('Animated Scene', 'Professional animated video with voiceover (HeyGen)',
+        CourseStyle.animated,   'animated_scene'),
+    ('Whiteboard Doodle', 'Hand-drawn whiteboard animation (HeyGen)',
+        CourseStyle.whiteboard, 'whiteboard_doodle'),
+    ('AI Presenter', 'Free animated renderer · No API key required',
+        CourseStyle.claude,     'modern'),
+    ('Hybrid', 'Mix of animated and live action (HeyGen)', CourseStyle.hybrid, 'hybrid'),
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    final idx = _styles.indexWhere((s) => s.$4 == widget.initialStyle);
+    if (idx >= 0) _selected = idx;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1346,7 +1406,10 @@ class _StepStyleState extends State<_StepStyle> {
             final s = _styles[i];
             final isSelected = _selected == i;
             return GestureDetector(
-              onTap: () => setState(() => _selected = i),
+              onTap: () {
+                setState(() => _selected = i);
+                widget.onStyleChanged(_styles[i].$4);
+              },
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 150),
                 decoration: BoxDecoration(

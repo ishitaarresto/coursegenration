@@ -9,6 +9,7 @@ import '../../../core/widgets/badge.dart';
 import '../../../core/widgets/section_header.dart';
 import '../../../core/widgets/arresto_ai_logo.dart';
 import '../../../data/providers/app_state.dart';
+import '../../shared/arresto_ai/arresto_ai_panel.dart';
 
 class SupportScreen extends ConsumerStatefulWidget {
   const SupportScreen({super.key});
@@ -267,7 +268,12 @@ class _SidePanel extends StatelessWidget {
               ArrestoButton(
                 label: 'Ask AI',
                 size: ArrestoButtonSize.sm,
-                onPressed: () {},
+                onPressed: () => showModalBottomSheet(
+                  context: context,
+                  isScrollControlled: true,
+                  backgroundColor: Colors.transparent,
+                  builder: (_) => const ArrestoAIPanel(),
+                ),
               ),
             ],
           ),

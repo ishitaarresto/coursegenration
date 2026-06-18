@@ -301,6 +301,18 @@ def _sync_ingest(
         job.chunks_created = len(result.chunks)
         job.status = "completed"
 
+        try:
+            from api.notification_store import push as _notif
+            _notif(
+                "admin",
+                "Document Uploaded",
+                f'"{file_path.name}" ingested successfully ({job.chunks_created} chunks).',
+                "📄",
+                "document_uploaded",
+            )
+        except Exception:
+            pass
+
         if retrieval_pipeline is not None and result.chunks:
             try:
                 retrieval_pipeline.dual_index(result.chunks)
@@ -445,6 +457,18 @@ def _sync_generate_course(
 
         job.status = "completed"
         job_store._persist_course(job)
+
+        try:
+            from api.notification_store import push as _notif
+            _notif(
+                "admin",
+                "Course Generated",
+                f'"{script.course_title}" has been generated successfully.',
+                "🤖",
+                "course_generated",
+            )
+        except Exception:
+            pass
     except Exception as exc:
         job.status = "failed"
         job.error  = str(exc)

@@ -20,4 +20,16 @@ class Learner {
     required this.assessments,
     required this.status,
   });
+
+  factory Learner.fromJson(Map<String, dynamic> j) => Learner(
+        id:          j['id']          as String,
+        name:        j['name']        as String,
+        email:       j['email']       as String,
+        enrolled:    j['enrolled']    as int,
+        progress:    j['progress']    as int,
+        lastActive:  j['last_active'] as String,
+        time:        j['time']        as String,
+        assessments: j['assessments'] as int,
+        status:      j['status']      as String,
+      );
 }

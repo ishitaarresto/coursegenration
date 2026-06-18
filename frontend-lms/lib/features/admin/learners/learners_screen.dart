@@ -11,7 +11,7 @@ import '../../../core/widgets/stat_card.dart';
 import '../../../core/widgets/chip_group.dart';
 import '../../../core/widgets/avatar.dart';
 import '../../../core/widgets/section_header.dart';
-import '../../../data/providers/app_state.dart';
+import '../../../data/providers/api_providers.dart';
 
 class LearnersScreen extends ConsumerStatefulWidget {
   const LearnersScreen({super.key});
@@ -26,7 +26,7 @@ class _LearnersScreenState extends ConsumerState<LearnersScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final learners = ref.watch(learnersProvider);
+    final learners = ref.watch(learnersApiProvider).valueOrNull ?? [];
     final filtered = learners.where((l) {
       final matchSearch = _search.isEmpty ||
           l.name.toLowerCase().contains(_search.toLowerCase()) ||
@@ -52,7 +52,9 @@ class _LearnersScreenState extends ConsumerState<LearnersScreen> {
 
             // Stats
             LayoutBuilder(builder: (ctx, c) {
-              final cols = c.maxWidth > 800 ? 4 : 2;
+              final cols   = c.maxWidth > 800 ? 4 : 2;
+              final total  = learners.length;
+              final active = learners.where((l) => l.status == 'Active').length;
               return GridView.count(
                 crossAxisCount: cols,
                 shrinkWrap: true,
@@ -60,31 +62,31 @@ class _LearnersScreenState extends ConsumerState<LearnersScreen> {
                 crossAxisSpacing: 10,
                 mainAxisSpacing: 10,
                 childAspectRatio: 1.5,
-                children: const [
+                children: [
                   StatCard(
                     title: 'Total Learners',
-                    value: '1,284',
+                    value: '$total',
                     icon: Icons.people_rounded,
                     barColor: ArrestoColors.blue,
                     iconColor: ArrestoColors.blue,
                   ),
                   StatCard(
                     title: 'Active',
-                    value: '1,042',
+                    value: '$active',
                     icon: Icons.check_circle_rounded,
                     barColor: ArrestoColors.green,
                     iconColor: ArrestoColors.green,
                   ),
                   StatCard(
                     title: 'Inactive',
-                    value: '198',
+                    value: '${total - active}',
                     icon: Icons.pause_circle_rounded,
                     barColor: ArrestoColors.textMuted,
                     iconColor: ArrestoColors.textMuted,
                   ),
-                  StatCard(
+                  const StatCard(
                     title: 'New This Month',
-                    value: '44',
+                    value: '—',
                     icon: Icons.person_add_rounded,
                     barColor: ArrestoColors.amber,
                     iconColor: ArrestoColors.amber,

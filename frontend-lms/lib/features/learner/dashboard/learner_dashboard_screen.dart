@@ -14,6 +14,7 @@ import '../../../core/widgets/section_header.dart';
 import '../../../core/widgets/arresto_ai_logo.dart';
 import '../../../data/providers/api_providers.dart';
 import '../../../data/models/course.dart';
+import '../../shared/arresto_ai/arresto_ai_panel.dart';
 
 class LearnerDashboardScreen extends ConsumerWidget {
   const LearnerDashboardScreen({super.key});
@@ -168,9 +169,26 @@ class _HeroBanner extends StatelessWidget {
   }
 }
 
-class _StatsStrip extends StatelessWidget {
+class _StatsStrip extends ConsumerWidget {
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final coursesAsync = ref.watch(libraryProvider);
+    final historyAsync = ref.watch(assessmentHistoryProvider);
+
+    final courseCount = coursesAsync.maybeWhen(
+      data: (c) => '${c.length}',
+      orElse: () => '—',
+    );
+    final certCount = historyAsync.maybeWhen(
+      data: (h) {
+        final passed = h.map((a) => a.courseId).toSet().where(
+          (cid) => h.any((a) => a.courseId == cid && a.passed),
+        ).length;
+        return '$passed';
+      },
+      orElse: () => '—',
+    );
+
     return LayoutBuilder(
       builder: (ctx, constraints) {
         final cols = constraints.maxWidth > 800
@@ -185,35 +203,31 @@ class _StatsStrip extends StatelessWidget {
           crossAxisSpacing: 12,
           mainAxisSpacing: 12,
           childAspectRatio: 1.7,
-          children: const [
+          children: [
             StatCard(
-              title: 'Courses Enrolled',
-              value: '4',
-              sub: '+1 this month',
+              title: 'Courses Available',
+              value: courseCount,
               icon: Icons.school_rounded,
               iconColor: ArrestoColors.amber,
               barColor: ArrestoColors.amber,
             ),
-            StatCard(
+            const StatCard(
               title: 'Lessons Completed',
-              value: '26',
-              sub: '3 this week',
+              value: '—',
               icon: Icons.check_circle_rounded,
               iconColor: ArrestoColors.green,
               barColor: ArrestoColors.green,
             ),
             StatCard(
-              title: 'Certificates',
-              value: '1',
-              sub: '1 in progress',
+              title: 'Certificates Earned',
+              value: certCount,
               icon: Icons.workspace_premium_rounded,
               iconColor: ArrestoColors.orange,
               barColor: ArrestoColors.orange,
             ),
-            StatCard(
+            const StatCard(
               title: 'Learning Streak',
-              value: '7 days',
-              sub: 'Keep it up! 🔥',
+              value: '—',
               icon: Icons.local_fire_department_rounded,
               iconColor: ArrestoColors.red,
               barColor: ArrestoColors.red,
@@ -558,12 +572,7 @@ class _AISheet extends StatelessWidget {
   const _AISheet();
 
   @override
-  Widget build(BuildContext context) {
-    return const SizedBox(
-      height: 500,
-      child: Center(child: Text('AI Panel')),
-    );
-  }
+  Widget build(BuildContext context) => const ArrestoAIPanel();
 }
 
 class _DonutChart extends StatelessWidget {

@@ -200,6 +200,31 @@ class CourseLibrary:
             db.commit()
         return True
 
+    def get_assessment_questions(self, script_id: str) -> list[dict] | None:
+        """Return cached assessment questions, or None if not yet generated."""
+        from api.db import SessionLocal
+        from api.models.courses import CourseScriptRow
+        with SessionLocal() as db:
+            row = db.get(CourseScriptRow, script_id)
+            if row is None:
+                return None
+            raw = getattr(row, "assessment_questions_json", None)
+            if not raw:
+                return None
+            return json.loads(raw)
+
+    def save_assessment_questions(self, script_id: str, questions: list[dict]) -> bool:
+        """Cache generated assessment questions. Returns False if course not found."""
+        from api.db import SessionLocal
+        from api.models.courses import CourseScriptRow
+        with SessionLocal() as db:
+            row = db.get(CourseScriptRow, script_id)
+            if row is None:
+                return False
+            row.assessment_questions_json = json.dumps(questions, ensure_ascii=False)
+            db.commit()
+        return True
+
     # -- Internal helpers ------------------------------------------------------
 
     @staticmethod

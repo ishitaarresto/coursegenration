@@ -10,6 +10,7 @@ import '../../../core/widgets/chip_group.dart';
 import '../../../core/widgets/course_thumb.dart';
 import '../../../core/widgets/section_header.dart';
 import '../../../core/services/course_service.dart';
+import '../../../core/services/video_service.dart';
 import '../../../data/models/course.dart';
 import '../../../data/providers/api_providers.dart';
 
@@ -25,10 +26,35 @@ class _AllCoursesScreenState extends ConsumerState<AllCoursesScreen> {
   String _status   = 'All';
   String _viewMode = 'Grid';
 
-  // ── Actions ────────────────────────────────────────────────────────────────
-
   void _view(BuildContext ctx, Course course) {
     ctx.go('/learner/course/${course.id}');
+  }
+
+  Future<void> _generateVideos(BuildContext ctx, Course course) async {
+    final style = await showDialog<String>(
+      context: ctx,
+      builder: (dctx) => _GenerateVideoDialog(course: course),
+    );
+    if (style == null || !ctx.mounted) return;
+    try {
+      final count = await VideoService.generateAll(course.id, style: style);
+      if (ctx.mounted) {
+        ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
+          content: Text(
+            'Generating $count video${count != 1 ? 's' : ''} for "${course.title}". '
+            'This may take a few minutes per lesson.',
+          ),
+          duration: const Duration(seconds: 5),
+        ));
+      }
+    } catch (e) {
+      if (ctx.mounted) {
+        ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
+          content: Text('Video generation failed: $e'),
+          backgroundColor: ArrestoColors.red,
+        ));
+      }
+    }
   }
 
   void _showEditSheet(BuildContext ctx, Course course) {
@@ -48,16 +74,14 @@ class _AllCoursesScreenState extends ConsumerState<AllCoursesScreen> {
       context: ctx,
       builder: (dctx) => AlertDialog(
         title: const Text('Delete Course'),
-        content: Text(
-            'Delete "${course.title}"? This cannot be undone.'),
+        content: Text('Delete "${course.title}"? This cannot be undone.'),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(dctx, false),
               child: const Text('Cancel')),
           TextButton(
             onPressed: () => Navigator.pop(dctx, true),
-            style: TextButton.styleFrom(
-                foregroundColor: ArrestoColors.red),
+            style: TextButton.styleFrom(foregroundColor: ArrestoColors.red),
             child: const Text('Delete'),
           ),
         ],
@@ -76,12 +100,9 @@ class _AllCoursesScreenState extends ConsumerState<AllCoursesScreen> {
     }
   }
 
-  // ── Build ──────────────────────────────────────────────────────────────────
-
   @override
   Widget build(BuildContext context) {
     final libraryAsync = ref.watch(libraryProvider);
-
     return Scaffold(
       backgroundColor: ArrestoColors.background,
       body: libraryAsync.when(
@@ -97,9 +118,7 @@ class _AllCoursesScreenState extends ConsumerState<AllCoursesScreen> {
               const SizedBox(height: 12),
               Text('Could not load courses', style: ArrestoText.bodyMd()),
               const SizedBox(height: 4),
-              Text('$e',
-                  style: ArrestoText.small(),
-                  textAlign: TextAlign.center),
+              Text('$e', style: ArrestoText.small(), textAlign: TextAlign.center),
               const SizedBox(height: 16),
               ArrestoButton(
                 label: 'Retry',
@@ -119,8 +138,7 @@ class _AllCoursesScreenState extends ConsumerState<AllCoursesScreen> {
       final matchSearch = _search.isEmpty ||
           c.title.toLowerCase().contains(_search.toLowerCase()) ||
           c.code.toLowerCase().contains(_search.toLowerCase());
-      final matchStatus =
-          _status == 'All' || c.status == _status.toLowerCase();
+      final matchStatus = _status == 'All' || c.status == _status.toLowerCase();
       return matchSearch && matchStatus;
     }).toList();
 
@@ -156,8 +174,6 @@ class _AllCoursesScreenState extends ConsumerState<AllCoursesScreen> {
                   ),
                 ]),
                 const SizedBox(height: 16),
-
-                // Summary chips
                 Row(children: [
                   _statChip('${all.length}', 'Total', ArrestoColors.ink),
                   const SizedBox(width: 8),
@@ -174,7 +190,6 @@ class _AllCoursesScreenState extends ConsumerState<AllCoursesScreen> {
                       'Generating', ArrestoColors.orange),
                 ]),
                 const SizedBox(height: 16),
-
                 Row(children: [
                   Expanded(
                     child: TextField(
@@ -209,8 +224,7 @@ class _AllCoursesScreenState extends ConsumerState<AllCoursesScreen> {
                   ),
                 ]),
                 const SizedBox(height: 12),
-                Text('${filtered.length} results',
-                    style: ArrestoText.small()),
+                Text('${filtered.length} results', style: ArrestoText.small()),
                 const SizedBox(height: 12),
               ],
             ),
@@ -246,13 +260,14 @@ class _AllCoursesScreenState extends ConsumerState<AllCoursesScreen> {
                 maxCrossAxisExtent: 360,
                 crossAxisSpacing: 14,
                 mainAxisSpacing: 14,
-                childAspectRatio: 0.75,
+                childAspectRatio: 0.68,
               ),
               itemCount: filtered.length,
               itemBuilder: (ctx, i) => _AdminCourseCard(
                 course: filtered[i],
                 onView: () => _view(ctx, filtered[i]),
                 onEdit: () => _showEditSheet(ctx, filtered[i]),
+                onGenerateVideo: () => _generateVideos(ctx, filtered[i]),
               ),
             ),
           )
@@ -264,6 +279,7 @@ class _AllCoursesScreenState extends ConsumerState<AllCoursesScreen> {
                 courses: filtered,
                 onEdit: (c) => _showEditSheet(context, c),
                 onDelete: (c) => _confirmDelete(context, c),
+                onGenerateVideo: (c) => _generateVideos(context, c),
               ),
             ),
           ),
@@ -275,8 +291,7 @@ class _AllCoursesScreenState extends ConsumerState<AllCoursesScreen> {
 
   Widget _statChip(String value, String label, Color color) {
     return Container(
-      padding:
-          const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
         color: color.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(8),
@@ -285,9 +300,7 @@ class _AllCoursesScreenState extends ConsumerState<AllCoursesScreen> {
       child: Row(mainAxisSize: MainAxisSize.min, children: [
         Text(value,
             style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w800,
-                color: color)),
+                fontSize: 14, fontWeight: FontWeight.w800, color: color)),
         const SizedBox(width: 5),
         Text(label, style: ArrestoText.xs()),
       ]),
@@ -300,16 +313,14 @@ class _AllCoursesScreenState extends ConsumerState<AllCoursesScreen> {
       onTap: () => setState(() => _viewMode = mode),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 120),
-        padding:
-            const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
         decoration: BoxDecoration(
           color: active ? ArrestoColors.ink : Colors.transparent,
           borderRadius: BorderRadius.circular(7),
         ),
         child: Icon(icon,
             size: 16,
-            color:
-                active ? Colors.white : ArrestoColors.textMuted),
+            color: active ? Colors.white : ArrestoColors.textMuted),
       ),
     );
   }
@@ -321,11 +332,13 @@ class _AdminCourseCard extends StatelessWidget {
   final Course course;
   final VoidCallback onView;
   final VoidCallback onEdit;
+  final VoidCallback onGenerateVideo;
 
   const _AdminCourseCard({
     required this.course,
     required this.onView,
     required this.onEdit,
+    required this.onGenerateVideo,
   });
 
   @override
@@ -364,14 +377,12 @@ class _AdminCourseCard extends StatelessWidget {
                     Icon(Icons.menu_book_rounded,
                         size: 12, color: ArrestoColors.textMuted),
                     const SizedBox(width: 3),
-                    Text('${course.lessons} lessons',
-                        style: ArrestoText.small()),
+                    Text('${course.lessons} lessons', style: ArrestoText.small()),
                     const SizedBox(width: 10),
                     Icon(Icons.schedule_rounded,
                         size: 12, color: ArrestoColors.textMuted),
                     const SizedBox(width: 3),
-                    Text('${course.mins} min',
-                        style: ArrestoText.small()),
+                    Text('${course.mins} min', style: ArrestoText.small()),
                   ]),
                   const Spacer(),
                   Row(children: [
@@ -394,6 +405,17 @@ class _AdminCourseCard extends StatelessWidget {
                       ),
                     ),
                   ]),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ArrestoButton(
+                      label: 'Generate Videos',
+                      size: ArrestoButtonSize.sm,
+                      variant: ArrestoButtonVariant.ghost,
+                      icon: const Icon(Icons.video_library_rounded),
+                      onPressed: onGenerateVideo,
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -410,11 +432,13 @@ class _CoursesTable extends StatelessWidget {
   final List<Course> courses;
   final void Function(Course) onEdit;
   final void Function(Course) onDelete;
+  final void Function(Course) onGenerateVideo;
 
   const _CoursesTable({
     required this.courses,
     required this.onEdit,
     required this.onDelete,
+    required this.onGenerateVideo,
   });
 
   @override
@@ -424,23 +448,18 @@ class _CoursesTable extends StatelessWidget {
       child: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.symmetric(
-                horizontal: 16, vertical: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             child: Row(children: [
               Expanded(
                   flex: 3,
-                  child:
-                      Text('Course', style: ArrestoText.smallBold())),
+                  child: Text('Course', style: ArrestoText.smallBold())),
               Expanded(
-                  child: Text('Lessons',
-                      style: ArrestoText.smallBold())),
+                  child: Text('Lessons', style: ArrestoText.smallBold())),
               Expanded(
-                  child:
-                      Text('Status', style: ArrestoText.smallBold())),
+                  child: Text('Status', style: ArrestoText.smallBold())),
               Expanded(
-                  child:
-                      Text('Duration', style: ArrestoText.smallBold())),
-              const SizedBox(width: 80),
+                  child: Text('Duration', style: ArrestoText.smallBold())),
+              const SizedBox(width: 120),
             ]),
           ),
           const Divider(height: 1, color: ArrestoColors.line),
@@ -448,6 +467,7 @@ class _CoursesTable extends StatelessWidget {
                 course: c,
                 onEdit: () => onEdit(c),
                 onDelete: () => onDelete(c),
+                onGenerateVideo: () => onGenerateVideo(c),
               )),
         ],
       ),
@@ -459,11 +479,13 @@ class _TableRow extends StatelessWidget {
   final Course course;
   final VoidCallback onEdit;
   final VoidCallback onDelete;
+  final VoidCallback onGenerateVideo;
 
   const _TableRow({
     required this.course,
     required this.onEdit,
     required this.onDelete,
+    required this.onGenerateVideo,
   });
 
   @override
@@ -471,20 +493,17 @@ class _TableRow extends StatelessWidget {
     return Container(
       decoration: const BoxDecoration(
         border: Border(
-            bottom: BorderSide(
-                color: ArrestoColors.line, width: 0.5)),
+            bottom: BorderSide(color: ArrestoColors.line, width: 0.5)),
       ),
       child: Padding(
-        padding: const EdgeInsets.symmetric(
-            horizontal: 16, vertical: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         child: Row(children: [
           SizedBox(
             width: 36,
             height: 36,
             child: ClipRRect(
               borderRadius: BorderRadius.circular(8),
-              child: CourseThumb(
-                  style: course.style, code: null, height: 36),
+              child: CourseThumb(style: course.style, code: null, height: 36),
             ),
           ),
           const SizedBox(width: 10),
@@ -501,13 +520,17 @@ class _TableRow extends StatelessWidget {
           ),
           Expanded(
               child: Text('${course.lessons}',
-                  style: ArrestoText.body(
-                      color: ArrestoColors.ink))),
+                  style: ArrestoText.body(color: ArrestoColors.ink))),
           Expanded(child: StatusBadge(status: course.status)),
           Expanded(
-              child: Text('${course.mins} min',
-                  style: ArrestoText.small())),
+              child: Text('${course.mins} min', style: ArrestoText.small())),
           Row(children: [
+            IconButton(
+              icon: const Icon(Icons.video_library_rounded,
+                  size: 16, color: ArrestoColors.orange),
+              onPressed: onGenerateVideo,
+              tooltip: 'Generate Videos',
+            ),
             IconButton(
               icon: const Icon(Icons.edit_rounded,
                   size: 16, color: ArrestoColors.textMuted),
@@ -532,7 +555,6 @@ class _TableRow extends StatelessWidget {
 class _EditCourseSheet extends StatefulWidget {
   final Course course;
   final VoidCallback onSaved;
-
   const _EditCourseSheet({required this.course, required this.onSaved});
 
   @override
@@ -563,19 +585,13 @@ class _EditCourseSheetState extends State<_EditCourseSheet> {
       Navigator.pop(context);
       return;
     }
-    setState(() {
-      _saving = true;
-      _error = null;
-    });
+    setState(() { _saving = true; _error = null; });
     try {
       await CourseService.updateCourseTitle(widget.course.id, newTitle);
       widget.onSaved();
       if (mounted) Navigator.pop(context);
     } catch (e) {
-      setState(() {
-        _saving = false;
-        _error = 'Save failed: $e';
-      });
+      setState(() { _saving = false; _error = 'Save failed: $e'; });
     }
   }
 
@@ -583,9 +599,7 @@ class _EditCourseSheetState extends State<_EditCourseSheet> {
   Widget build(BuildContext context) {
     return Container(
       padding: EdgeInsets.only(
-        left: 24,
-        right: 24,
-        top: 24,
+        left: 24, right: 24, top: 24,
         bottom: 24 + MediaQuery.of(context).viewInsets.bottom,
       ),
       decoration: const BoxDecoration(
@@ -612,8 +626,7 @@ class _EditCourseSheetState extends State<_EditCourseSheet> {
           ),
           if (_error != null) ...[
             const SizedBox(height: 8),
-            Text(_error!,
-                style: ArrestoText.small(color: ArrestoColors.red)),
+            Text(_error!, style: ArrestoText.small(color: ArrestoColors.red)),
           ],
           const SizedBox(height: 20),
           Row(children: [
@@ -634,6 +647,152 @@ class _EditCourseSheetState extends State<_EditCourseSheet> {
           ]),
         ],
       ),
+    );
+  }
+}
+
+// ── Generate video confirmation dialog ────────────────────────────────────────
+
+class _GenerateVideoDialog extends StatefulWidget {
+  final Course course;
+  const _GenerateVideoDialog({required this.course});
+
+  @override
+  State<_GenerateVideoDialog> createState() => _GenerateVideoDialogState();
+}
+
+class _GenerateVideoDialogState extends State<_GenerateVideoDialog> {
+  String _style = 'modern';
+
+  // (style id, display name, description, icon, requires HeyGen)
+  static const _options = <(String, String, String, IconData, bool)>[
+    (
+      'modern',
+      'Free Animated',
+      'No API key needed · Works always',
+      Icons.movie_creation_rounded,
+      false,
+    ),
+    (
+      'animated_scene',
+      'Animated Scene',
+      'HeyGen AI · Requires HEYGEN_API_KEY in .env',
+      Icons.auto_awesome_rounded,
+      true,
+    ),
+    (
+      'whiteboard_doodle',
+      'Whiteboard Doodle',
+      'HeyGen AI · Requires HEYGEN_API_KEY in .env',
+      Icons.brush_rounded,
+      true,
+    ),
+    (
+      'hybrid',
+      'Hybrid',
+      'HeyGen AI · Mix of animated + live · Requires HEYGEN_API_KEY',
+      Icons.layers_rounded,
+      true,
+    ),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Generate Videos'),
+      content: SizedBox(
+        width: 420,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Course:', style: ArrestoText.small(color: ArrestoColors.textMuted)),
+            Text(widget.course.title, style: ArrestoText.bodyBold()),
+            const SizedBox(height: 16),
+            Text('Choose video style', style: ArrestoText.smallBold()),
+            const SizedBox(height: 8),
+            ..._options.map((opt) {
+              final selected = _style == opt.$1;
+              return GestureDetector(
+                onTap: () => setState(() => _style = opt.$1),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 120),
+                  margin: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: selected ? ArrestoColors.orangeTint : ArrestoColors.surface,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: selected ? ArrestoColors.orange : ArrestoColors.line,
+                      width: selected ? 2 : 1,
+                    ),
+                  ),
+                  child: Row(children: [
+                    Radio<String>(
+                      value: opt.$1,
+                      groupValue: _style,
+                      onChanged: (v) => setState(() => _style = v!),
+                      activeColor: ArrestoColors.orange,
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    const SizedBox(width: 8),
+                    Icon(opt.$4, size: 18,
+                        color: selected ? ArrestoColors.orange : ArrestoColors.textMuted),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(children: [
+                            Text(opt.$2, style: ArrestoText.bodyBold()),
+                            if (opt.$5) ...[
+                              const SizedBox(width: 6),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                decoration: BoxDecoration(
+                                  color: ArrestoColors.orange.withValues(alpha: 0.15),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: const Text('HeyGen',
+                                    style: TextStyle(
+                                        fontSize: 10,
+                                        color: ArrestoColors.orange,
+                                        fontWeight: FontWeight.w700)),
+                              ),
+                            ],
+                          ]),
+                          Text(opt.$3,
+                              style: ArrestoText.xs(color: ArrestoColors.textMuted)),
+                        ],
+                      ),
+                    ),
+                  ]),
+                ),
+              );
+            }),
+            const SizedBox(height: 4),
+            Text(
+              'Already-completed videos are skipped. '
+              'Failed renders will be retried. '
+              'Jobs run in the background.',
+              style: ArrestoText.small(color: ArrestoColors.textMuted),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, null),
+          child: const Text('Cancel'),
+        ),
+        FilledButton.icon(
+          onPressed: () => Navigator.pop(context, _style),
+          icon: const Icon(Icons.video_library_rounded, size: 16),
+          label: const Text('Generate'),
+          style: FilledButton.styleFrom(backgroundColor: ArrestoColors.orange),
+        ),
+      ],
     );
   }
 }
