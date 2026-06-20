@@ -1,16 +1,19 @@
 """
 modules/video/generators/heygen_render.py
 
-HeyGen Video Agent connector (v3 API).
+HeyGen v2 Avatar Video connector.
 
 Flow
 ----
-  1. POST /v3/video-agents  — prompt → video_id
-  2. GET  /v3/videos/{id}   — poll until status == "completed" → video_url
-  3. GET  <video_url>       — stream download → MP4
+  1. POST /v2/video/generate  — avatar + narration text → video_id
+  2. GET  /v1/video_status.get?video_id={id}  — poll until completed → video_url
+  3. GET  <video_url>  — stream download → MP4
 
-Set HEYGEN_API_KEY in .env to activate.  If not set, calling
-generate_heygen_video() raises HeyGenNotConfigured.
+Long narration scripts are automatically split into multiple clips (one
+video_inputs segment per paragraph block) to stay within HeyGen's per-clip
+character limit.
+
+Set HEYGEN_API_KEY in .env to activate.
 """
 from __future__ import annotations
 
@@ -31,12 +34,35 @@ class HeyGenError(RuntimeError):
     pass
 
 
+# ── Avatar / voice catalogue ───────────────────────────────────────────────────
+
+# Indian professional avatars — change these IDs to swap presenters
+_AVATARS: dict[str, str] = {
+    "male":   "Aditya_public_1",              # Indian male, blue blazer
+    "female": "Kavya_standing_indoor_front",  # Indian female, indoor
+}
+
+# Voice IDs mapped by (language-prefix, gender)
+# To add more languages, append entries like ("ta", "male"): "voice_id"
+_VOICES: dict[tuple[str, str], str] = {
+    ("en", "male"):   "RXQsBg4dCZCv2gRze9PW",
+    ("en", "female"): "s1kSvfYw2QOXqJEFnpRH",
+    ("hi", "male"):   "62695468af454e1784d782c846223ae4",
+    ("hi", "female"): "6255f703bfd94afe810f06d3186a9353",
+}
+
+_DEFAULT_AVATAR = "Aditya_public_1"
+_DEFAULT_VOICE  = "RXQsBg4dCZCv2gRze9PW"
+_MAX_CHARS      = 1400   # HeyGen per-clip text limit
+
+
+# ── Helpers ───────────────────────────────────────────────────────────────────
+
 def is_configured() -> bool:
     return bool(settings.heygen_api_key.strip())
 
 
 def remaining_credits() -> int | None:
-    """Read current credit balance — returns None if the call fails."""
     if not is_configured():
         return None
     try:
@@ -53,7 +79,7 @@ def _client() -> httpx.Client:
     if not is_configured():
         raise HeyGenNotConfigured(
             "HEYGEN_API_KEY is not set in .env. "
-            "Add it to enable Animated Scene / Whiteboard Doodle / Hybrid styles."
+            "Add it to enable HeyGen avatar video rendering."
         )
     return httpx.Client(
         base_url=settings.heygen_base_url,
@@ -65,150 +91,155 @@ def _client() -> httpx.Client:
     )
 
 
-def _build_prompt(lesson_title: str, lc: LessonContent, style: str, lang: str, voice_preference: str = "male") -> str:
-    """Build a concise prompt for the HeyGen Video Agent."""
-    takeaways = lc.key_takeaways or []
-    summary   = lc.summary or ""
+def _pick_avatar(voice_preference: str) -> str:
+    vp = voice_preference.lower()
+    gender = "female" if vp in ("female", "f", "ritu", "kavya") else "male"
+    return _AVATARS.get(gender, _DEFAULT_AVATAR)
 
-    _vp = voice_preference.lower()
-    is_male = _vp in ("male", "m", "rahul", "gokul")
-    lang_note = f" Language: {lang}." if lang != "en" else ""
 
-    style_desc = {
-        "animated_scene":    "animated motion-graphics (no human presenter, no avatar)",
-        "whiteboard_doodle": "whiteboard doodle animation (no human presenter, no avatar)",
-        "hybrid":            "hybrid animation combining motion-graphics and whiteboard sketches (no human presenter, no avatar)",
-    }.get(style, "animated infographics (no avatar)")
+def _pick_voice(lang: str, voice_preference: str) -> str:
+    vp = voice_preference.lower()
+    gender = "female" if vp in ("female", "f", "ritu", "kavya") else "male"
+    lang_prefix = lang.split("-")[0].lower()  # "en-IN" → "en", "hi-IN" → "hi"
+    return _VOICES.get((lang_prefix, gender), _DEFAULT_VOICE)
 
-    bullets = "\n".join(f"- {b}" for b in takeaways[:6]) if takeaways else ""
 
-    lines = [
-        f"Create a 90-second workplace safety training video.",
-        f"Topic: {lesson_title}",
-        f"Visual style: {style_desc}.{lang_note}",
-        f"Voice: {'male' if is_male else 'female'}, professional authoritative tone.",
-        "",
-        "Key points to cover:",
-        bullets if bullets else f"- {summary or lesson_title}",
-        "",
-        "Format: animated title card → animated bullet points with safety icons → summary recap card.",
-        "Colour coding: red for dangers/hazards, green for safe actions, orange for cautions.",
+def _split_text(text: str) -> list[str]:
+    """Split narration into ≤_MAX_CHARS segments at paragraph boundaries."""
+    text = text.strip()
+    if len(text) <= _MAX_CHARS:
+        return [text]
+
+    segments: list[str] = []
+    current = ""
+
+    for para in text.split("\n\n"):
+        para = para.strip()
+        if not para:
+            continue
+        if len(current) + len(para) + 2 <= _MAX_CHARS:
+            current = (current + "\n\n" + para).strip() if current else para
+        else:
+            if current:
+                segments.append(current)
+            # Paragraph itself too long — split by sentence
+            if len(para) > _MAX_CHARS:
+                for sentence in para.replace(". ", ".||").split("||"):
+                    s = sentence.strip()
+                    if not s:
+                        continue
+                    if len(current) + len(s) + 1 <= _MAX_CHARS:
+                        current = (current + " " + s).strip() if current else s
+                    else:
+                        if current:
+                            segments.append(current)
+                        current = s[:_MAX_CHARS]
+            else:
+                current = para
+
+    if current:
+        segments.append(current)
+
+    return segments or [text[:_MAX_CHARS]]
+
+
+def _build_narration(lesson_title: str, lc: LessonContent) -> str:
+    """Return the best available narration text for this lesson."""
+    if lc.narration_script and lc.narration_script.strip():
+        return lc.narration_script.strip()
+    # Fallback: build from key takeaways + summary
+    parts: list[str] = [f"{lesson_title}."]
+    if lc.key_takeaways:
+        parts.append("Key points: " + ". ".join(lc.key_takeaways[:6]) + ".")
+    if lc.summary:
+        parts.append(lc.summary)
+    return " ".join(parts)
+
+
+# ── API calls ─────────────────────────────────────────────────────────────────
+
+def _submit(avatar_id: str, voice_id: str, text_segments: list[str]) -> str:
+    """POST /v2/video/generate → video_id."""
+    video_inputs = [
+        {
+            "character": {
+                "type": "avatar",
+                "avatar_id": avatar_id,
+                "avatar_style": "normal",
+            },
+            "voice": {
+                "type": "text",
+                "input_text": seg,
+                "voice_id": voice_id,
+                "speed": 1.0,
+            },
+        }
+        for seg in text_segments
     ]
-    return "\n".join(lines)
 
-
-def _submit(prompt: str, *, max_retries: int = 4) -> str:
-    """POST to /v3/video-agents → returns session_id.
-
-    The Video Agent API returns a session_id immediately; video_id is null at
-    this stage and must be retrieved by polling _poll_session() next.
-
-    Retries with exponential backoff for transient 429/5xx responses.
-    Permanent failures (402 credits, 400 bad-request) raise immediately.
-    """
     delay = 5.0
-    last_error: str = ""
-    for attempt in range(max_retries + 1):
+    last_err = ""
+    for attempt in range(4):
         with _client() as c:
-            r = c.post("/v3/video-agents", json={"prompt": prompt})
+            r = c.post("/v2/video/generate", json={
+                "video_inputs": video_inputs,
+                "dimension": {"width": 1280, "height": 720},
+            })
 
         if r.status_code == 402 or "insufficient_credit" in r.text:
             raise HeyGenError(
-                "HeyGen credits exhausted. Top up at app.heygen.com → Billing, "
-                "then try again. (Tip: use style=modern for free rendering.)"
+                "HeyGen credits exhausted. Top up at app.heygen.com → Billing."
             )
-
-        # 400 is a permanent client error (bad payload) — don't retry
         if r.status_code == 400:
             raise HeyGenError(f"HeyGen submit failed [400]: {r.text}")
-
-        # Transient: 429 or 5xx
         if r.status_code == 429 or r.status_code >= 500:
-            last_error = f"HeyGen submit failed [{r.status_code}]: {r.text}"
-            if attempt < max_retries:
+            last_err = f"HeyGen submit [{r.status_code}]: {r.text}"
+            if attempt < 3:
                 time.sleep(delay)
                 delay = min(delay * 2, 60.0)
                 continue
-            raise HeyGenError(last_error)
-
+            raise HeyGenError(last_err)
         if r.status_code >= 400:
             raise HeyGenError(f"HeyGen submit failed [{r.status_code}]: {r.text}")
 
-        data = r.json().get("data", {})
-        session_id = data.get("session_id")
-        if not session_id:
-            raise HeyGenError(f"No session_id in HeyGen submit response: {r.text}")
-        return session_id
+        video_id = r.json().get("data", {}).get("video_id")
+        if not video_id:
+            raise HeyGenError(f"No video_id in HeyGen response: {r.text}")
+        return video_id
 
-    raise HeyGenError(last_error or "HeyGen submit failed after retries.")
+    raise HeyGenError(last_err or "HeyGen submit failed after retries.")
 
 
-def _poll_session(session_id: str, *, interval: float = 5.0, timeout: float = 300.0) -> str:
-    """GET /v3/video-agents/{session_id} until video_id is assigned → returns video_id.
-
-    The Video Agent API assigns a video_id asynchronously after the session is
-    created. This step bridges the gap between submit and video polling.
-    """
+def _poll(video_id: str, *, interval: float = 10.0, timeout: float = 1800.0) -> str:
+    """GET /v1/video_status.get until completed → video_url."""
     deadline = time.monotonic() + timeout
     with _client() as c:
         while time.monotonic() < deadline:
-            r = c.get(f"/v3/video-agents/{session_id}")
+            r = c.get(f"/v1/video_status.get?video_id={video_id}")
             if r.status_code >= 400:
-                raise HeyGenError(
-                    f"HeyGen session poll failed [{r.status_code}]: {r.text}"
-                )
-            data     = r.json().get("data", {})
-            status   = data.get("status", "")
-            video_id = data.get("video_id")
-            if video_id:
-                return video_id
-            if status in {"failed", "error"}:
-                raise HeyGenError(
-                    f"HeyGen session failed before assigning a video_id: {r.text}"
-                )
-            time.sleep(interval)
-    raise HeyGenError(
-        f"HeyGen session {session_id} did not assign a video_id within "
-        f"{timeout / 60:.0f} min."
-    )
+                raise HeyGenError(f"HeyGen poll failed [{r.status_code}]: {r.text}")
 
-
-def _poll_video(video_id: str, *, interval: float = 10.0, timeout: float = 2400.0) -> str:
-    """Poll /v3/videos/{id} until completed → returns video_url."""
-    deadline = time.monotonic() + timeout
-    with _client() as c:
-        while time.monotonic() < deadline:
-            r = c.get(f"/v3/videos/{video_id}")
-            if r.status_code >= 400:
-                raise HeyGenError(
-                    f"HeyGen video poll failed [{r.status_code}]: {r.text}"
-                )
             data   = r.json().get("data", {})
             status = data.get("status", "")
+
             if status == "completed":
                 url = data.get("video_url")
                 if not url:
-                    raise HeyGenError(
-                        "HeyGen marked video as completed but returned no video_url."
-                    )
+                    raise HeyGenError("HeyGen completed but returned no video_url.")
                 return url
+
             if status in {"failed", "error"}:
-                code = data.get("failure_code", "")
-                msg  = data.get("failure_message", "") or data.get("error", "unknown")
-                if "INSUFFICIENT_CREDIT" in code or "PAYMENT" in code:
-                    raise HeyGenError(
-                        f"HeyGen credits exhausted ({code}). "
-                        "Top up at app.heygen.com → Billing."
-                    )
-                raise HeyGenError(f"HeyGen generation failed [{code}]: {msg}")
+                msg = data.get("error") or "unknown"
+                raise HeyGenError(f"HeyGen generation failed: {msg}")
+
             time.sleep(interval)
+
     raise HeyGenError(
-        f"HeyGen timed out after {timeout / 60:.0f} min waiting for video {video_id}."
+        f"HeyGen timed out after {timeout / 60:.0f} min for video {video_id}."
     )
 
 
 def _download(url: str, out_path: Path) -> Path:
-    """Stream download video_url → out_path."""
     out_path.parent.mkdir(parents=True, exist_ok=True)
     with httpx.Client(timeout=300.0) as c, c.stream("GET", url) as r:
         if r.status_code >= 400:
@@ -218,6 +249,8 @@ def _download(url: str, out_path: Path) -> Path:
                 f.write(chunk)
     return out_path
 
+
+# ── Public API ────────────────────────────────────────────────────────────────
 
 def generate_heygen_video(
     lesson_id: str,
@@ -229,23 +262,27 @@ def generate_heygen_video(
     voice_preference: str = "male",
 ) -> Path:
     """
-    End-to-end HeyGen render: build prompt → submit → poll → download.
+    End-to-end HeyGen v2 avatar render:
+      build narration → split → submit → poll → download.
 
     Raises HeyGenNotConfigured if HEYGEN_API_KEY is missing.
     Raises HeyGenError on API or credit failures.
-    Returns the path to the downloaded MP4 (may be a cached hit).
+    Returns path to the downloaded MP4.
     """
     if not is_configured():
         raise HeyGenNotConfigured(
             f"Style '{style}' requires HEYGEN_API_KEY in .env."
         )
 
-    # Reuse a previously rendered file to avoid double-charging credits.
+    # Return cached file if already rendered
     if out_path.exists() and out_path.stat().st_size > 10_000:
         return out_path
 
-    prompt     = _build_prompt(lesson_title, lc, style, lang, voice_preference)
-    session_id = _submit(prompt)
-    video_id   = _poll_session(session_id)
-    url        = _poll_video(video_id)
+    narration      = _build_narration(lesson_title, lc)
+    segments       = _split_text(narration)
+    avatar_id      = _pick_avatar(voice_preference)
+    voice_id       = _pick_voice(lang, voice_preference)
+
+    video_id = _submit(avatar_id, voice_id, segments)
+    url      = _poll(video_id)
     return _download(url, out_path)
