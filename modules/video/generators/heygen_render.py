@@ -65,111 +65,36 @@ def _client() -> httpx.Client:
     )
 
 
-def _build_prompt(lesson_title: str, lc: LessonContent, style: str, lang: str) -> str:
-    """Build a rich, scene-by-scene HeyGen production brief from lesson content."""
-    narration = (
-        lc.narration_script
-        or lc.simplified_explanation
-        or lc.summary
-        or lesson_title
-    )
-    explanation = lc.simplified_explanation or ""
-    summary     = lc.summary or ""
-    takeaways   = lc.key_takeaways or []
-    examples    = lc.real_world_examples or []
+def _build_prompt(lesson_title: str, lc: LessonContent, style: str, lang: str, voice_preference: str = "male") -> str:
+    """Build a concise prompt for the HeyGen Video Agent."""
+    takeaways = lc.key_takeaways or []
+    summary   = lc.summary or ""
 
-    lang_note = f"Narrate and display all on-screen text in {lang}." if lang != "en" else ""
+    _vp = voice_preference.lower()
+    is_male = _vp in ("male", "m", "rahul", "gokul")
+    lang_note = f" Language: {lang}." if lang != "en" else ""
 
-    style_guide = {
-        "animated_scene": (
-            "Visual style: sleek motion-graphics infographic. "
-            "Colour palette: deep navy (#0A1628) background, safety orange (#FF6B35) accents, "
-            "white (#FFFFFF) body text, lime green (#7BC67E) for positive/safe indicators, "
-            "red (#E53935) for hazard/danger indicators. "
-            "Typography: bold sans-serif headings, clean body text. "
-            "NO avatar, NO human presenter — animated graphics and icons only."
-        ),
-        "whiteboard_doodle": (
-            "Visual style: clean whiteboard hand-drawn animation. "
-            "White board background, black marker strokes, coloured highlights in orange and blue. "
-            "Diagrams and icons drawn progressively on screen as the narration plays. "
-            "NO avatar, NO human presenter — whiteboard illustrations only."
-        ),
-        "hybrid": (
-            "Visual style: blend of polished motion-graphics and whiteboard sketches. "
-            "Alternates between animated infographic panels (navy/orange) and whiteboard "
-            "diagrams for process explanations. "
-            "NO avatar, NO human presenter — animated graphics and whiteboard drawings only."
-        ),
-    }.get(style, "Visual style: clean animated infographics. NO avatar.")
+    style_desc = {
+        "animated_scene":    "animated motion-graphics (no human presenter, no avatar)",
+        "whiteboard_doodle": "whiteboard doodle animation (no human presenter, no avatar)",
+        "hybrid":            "hybrid animation combining motion-graphics and whiteboard sketches (no human presenter, no avatar)",
+    }.get(style, "animated infographics (no avatar)")
 
-    # Build scene breakdown
-    takeaway_lines = "\n".join(
-        f"    Scene {i+3}: Animate key point {i+1} — \"{pt}\" — icon + bold text, slide in from left."
-        for i, pt in enumerate(takeaways[:5])
-    )
+    bullets = "\n".join(f"- {b}" for b in takeaways[:6]) if takeaways else ""
 
-    example_lines = ""
-    if examples:
-        ex_list = examples[:2]
-        ex_text = []
-        for ex in ex_list:
-            if isinstance(ex, dict):
-                ex_text.append(ex.get("scenario", ex.get("example", str(ex))))
-            else:
-                ex_text.append(str(ex))
-        example_lines = (
-            "\n    Scene EX: Show real-world example panel — "
-            + " | ".join(ex_text[:2])
-        )
-
-    scenes = f"""
-SCENE BREAKDOWN
----------------
-Scene 1 — TITLE CARD (3 sec)
-    Full-screen animated title: "{lesson_title}"
-    Subtitle: course name / module badge. Fade in with subtle motion.
-
-Scene 2 — OVERVIEW (10 sec)
-    Split panel: left side narration summary text animates in word-by-word.
-    Right side: relevant icon or diagram that represents the topic.
-    Narration: {summary or narration[:300]}
-{takeaway_lines}
-{example_lines}
-
-Scene OUTRO — SUMMARY CARD (5 sec)
-    Recap tile listing all key takeaways as icons + short labels.
-    End card with course branding.
-"""
-
-    prompt = f"""Create a professional, high-quality educational safety training video.
-
-LESSON: {lesson_title}
-
-{style_guide}
-{lang_note}
-
-NARRATION SCRIPT (read this verbatim as the voice-over):
-{narration[:2500]}
-
-SIMPLIFIED EXPLANATION (use for on-screen caption overlays):
-{explanation[:600]}
-
-{scenes}
-
-PRODUCTION REQUIREMENTS:
-- Total duration: 90–120 seconds per lesson
-- Open with a 3-second animated title card
-- Each key point gets its own dedicated visual panel with icon + bold text
-- Use smooth transitions (fade / slide) between scenes
-- Safety-themed icons throughout (hard hats, warning triangles, checkmarks, shields)
-- Animated data visualisations where relevant (bar charts, risk matrices, process flowcharts)
-- Consistent colour coding: red = hazard/danger, green = safe/correct, orange = caution
-- Close with a summary recap card showing all key takeaways
-- High-energy, confident pacing — professional corporate safety training tone
-- NO avatar, NO human presenter on screen at any time
-"""
-    return prompt[:4000]
+    lines = [
+        f"Create a 90-second workplace safety training video.",
+        f"Topic: {lesson_title}",
+        f"Visual style: {style_desc}.{lang_note}",
+        f"Voice: {'male' if is_male else 'female'}, professional authoritative tone.",
+        "",
+        "Key points to cover:",
+        bullets if bullets else f"- {summary or lesson_title}",
+        "",
+        "Format: animated title card → animated bullet points with safety icons → summary recap card.",
+        "Colour coding: red for dangers/hazards, green for safe actions, orange for cautions.",
+    ]
+    return "\n".join(lines)
 
 
 def _submit(prompt: str, *, max_retries: int = 4) -> str:
@@ -301,6 +226,7 @@ def generate_heygen_video(
     style: str,
     lang: str,
     out_path: Path,
+    voice_preference: str = "male",
 ) -> Path:
     """
     End-to-end HeyGen render: build prompt → submit → poll → download.
@@ -318,7 +244,7 @@ def generate_heygen_video(
     if out_path.exists() and out_path.stat().st_size > 10_000:
         return out_path
 
-    prompt     = _build_prompt(lesson_title, lc, style, lang)
+    prompt     = _build_prompt(lesson_title, lc, style, lang, voice_preference)
     session_id = _submit(prompt)
     video_id   = _poll_session(session_id)
     url        = _poll_video(video_id)

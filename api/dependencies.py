@@ -365,6 +365,7 @@ def _sync_generate_course(
     course_format:      str = "standard",
     language:           str = "English",
     duration_range:     str = "60-90 minutes",
+    user_instructions:  str | None = None,
 ) -> None:
     import sys, io as _io
     _captured   = _io.StringIO()
@@ -405,6 +406,7 @@ def _sync_generate_course(
                 target_audience=target_audience,
                 progress_callback=_on_lesson_done,
                 instructions=instructions,
+                user_instructions=user_instructions,
                 use_knowledge_base=use_knowledge_base,
                 language=language,
                 duration_range=duration_range,
@@ -490,11 +492,12 @@ async def generate_course_in_background(
     target_audience: str, embedder: Any = None, instructions: str | None = None,
     use_knowledge_base: bool = False, course_format: str = "standard",
     language: str = "English", duration_range: str = "60-90 minutes",
+    user_instructions: str | None = None,
 ) -> None:
     await asyncio.to_thread(
         _sync_generate_course, job, vector_store, api_key, course_title,
         target_audience, embedder, instructions, use_knowledge_base, course_format,
-        language, duration_range,
+        language, duration_range, user_instructions,
     )
 
 

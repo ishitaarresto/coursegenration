@@ -22,5 +22,6 @@ class VideoRenderRow(Base):
     video_path:  Mapped[str | None]   = Column(String)
     error:       Mapped[str | None]   = Column(String)
     tts_engine:  Mapped[str]          = Column(String, nullable=False, default="")
+    voice:       Mapped[str]          = Column(String, nullable=False, default="")
     started_at:  Mapped[float]        = Column(Float, nullable=False)
     finished_at: Mapped[float | None] = Column(Float)

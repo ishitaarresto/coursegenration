@@ -123,6 +123,14 @@ def _do_render(
             out_path = (
                 Path("media") / "heygen" / job.render_id / f"{job.lang}.mp4"
             )
+            # Map Sarvam speaker names to male/female preference for HeyGen prompt
+            _v = (job.voice or "").lower()
+            voice_pref = (
+                "male" if _v in ("male", "rahul", "gokul", "m") else
+                "female" if _v in ("female", "ritu", "kavitha", "priya", "kavya",
+                                   "ishita", "pooja", "simran", "neha", "f") else
+                "male"  # default to male narrator for safety training
+            )
             mp4_path: Path = generate_heygen_video(
                 lesson_id=job.render_id,
                 lesson_title=lesson_title,
@@ -130,6 +138,7 @@ def _do_render(
                 style=job.style,
                 lang=job.lang,
                 out_path=out_path,
+                voice_preference=voice_pref,
             )
         else:
             # ── Free animated render (default) ────────────────────────────────
@@ -146,6 +155,7 @@ def _do_render(
                 narration_script=narration,
                 lang=job.lang,
                 style=job.style,
+                voice=job.voice or None,
             )
 
         job.video_path  = str(mp4_path.resolve())

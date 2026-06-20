@@ -48,6 +48,7 @@ def _get_engine(request: Request):
 
 class SpeakRequest(BaseModel):
     text: str
+    voice: str = ""
 
 
 @router.post("/speak")
@@ -58,11 +59,21 @@ async def speak(body: SpeakRequest, request: Request):
     The frontend sets AudioElement.src to the returned URL and calls play() —
     the browser streams the MP3 directly without any binary data handling in Dart.
     Audio is held in memory for 5 minutes; re-request if it expires.
+    Pass `voice` to override the default Sarvam speaker (e.g. "ritu", "rahul").
     """
     text = body.text.strip()[:5000]
     if not text:
         raise HTTPException(status_code=400, detail="text is required")
-    engine = _get_engine(request)
+
+    if body.voice:
+        from modules.video.generators.sarvam_tts import SarvamTTSEngine, is_configured
+        if is_configured():
+            engine = SarvamTTSEngine(lang="en-in", speaker=body.voice)
+        else:
+            engine = _get_engine(request)
+    else:
+        engine = _get_engine(request)
+
     mp3_bytes: bytes = await asyncio.to_thread(engine.synthesize_bytes, text)
     _evict()
     audio_id = str(uuid.uuid4())

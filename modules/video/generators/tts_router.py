@@ -31,18 +31,18 @@ def _use_sarvam(lang: str) -> bool:
     return lang.lower() in SARVAM_SUPPORTED
 
 
-def synthesise(text: str, lang: str, output_path: Path) -> Path:
+def synthesise(text: str, lang: str, output_path: Path, voice: str | None = None) -> Path:
     if _use_sarvam(lang):
         from modules.video.generators.sarvam_tts import synthesise as _s
-        return _s(text, lang, output_path)
+        return _s(text, lang, output_path, speaker=voice or None)
     from modules.video.generators.tts import synthesise as _e
     return _e(text, lang, output_path)
 
 
-def synthesise_with_timings(text: str, lang: str, output_path: Path) -> list[dict]:
+def synthesise_with_timings(text: str, lang: str, output_path: Path, voice: str | None = None) -> list[dict]:
     if _use_sarvam(lang):
         from modules.video.generators.sarvam_tts import synthesise_with_timings as _s
-        return _s(text, lang, output_path)
+        return _s(text, lang, output_path, speaker=voice or None)
     from modules.video.generators.tts import synthesise_with_timings as _e
     return _e(text, lang, output_path)
 

@@ -161,6 +161,7 @@ def _start_course_job(
     course_title:       str | None,
     target_audience:    str,
     instructions:       str | None,
+    user_instructions:  str | None,
     use_knowledge_base: bool,
     course_format:      str,
     language:           str,
@@ -200,6 +201,7 @@ def _start_course_job(
         course_format,
         language,
         duration_range,
+        user_instructions,
     )
 
     return CourseGenerateResponse(
@@ -240,6 +242,7 @@ async def generate_course(
         course_title=request.course_title,
         target_audience=request.target_audience,
         instructions=request.instructions,
+        user_instructions=request.user_instructions,
         use_knowledge_base=request.use_knowledge_base,
         course_format=request.course_format,
         language=request.language,
@@ -290,6 +293,7 @@ async def generate_course_from_blueprint(
         course_title=course_title,
         target_audience=target_audience,
         instructions=instructions,
+        user_instructions=None,
         use_knowledge_base=use_knowledge_base,
         course_format=course_format,
         language=language,

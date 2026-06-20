@@ -28,6 +28,7 @@ class VideoRenderJob:
     started_at:  float = field(default_factory=time.time)
     finished_at: float | None = None
     tts_engine:  str = ""
+    voice:       str = ""
 
 
 class VideoJobStore:
@@ -84,6 +85,7 @@ class VideoJobStore:
                 row.video_path  = job.video_path
                 row.error       = job.error
                 row.tts_engine  = job.tts_engine
+                row.voice       = job.voice
                 row.started_at  = job.started_at
                 row.finished_at = job.finished_at
                 db.commit()
@@ -92,13 +94,14 @@ class VideoJobStore:
 
     # -- Public API ------------------------------------------------------------
 
-    def create(self, script_id: str, lesson_ref: str, lang: str, style: str) -> VideoRenderJob:
+    def create(self, script_id: str, lesson_ref: str, lang: str, style: str, voice: str = "") -> VideoRenderJob:
         job = VideoRenderJob(
             render_id=str(uuid.uuid4()),
             script_id=script_id,
             lesson_ref=lesson_ref,
             lang=lang,
             style=style,
+            voice=voice,
         )
         self._jobs[job.render_id] = job
         self._upsert(job)
@@ -130,6 +133,7 @@ class VideoJobStore:
             video_path=row.video_path,
             error=row.error,
             tts_engine=row.tts_engine or "",
+            voice=row.voice or "",
             started_at=row.started_at,
             finished_at=row.finished_at,
         )

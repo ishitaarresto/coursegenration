@@ -146,7 +146,7 @@ _INTENT_SUMMARY = "summary"
 
 
 class TutorEngine:
-    _MODEL = "claude-sonnet-4-6"
+    _MODEL = "claude-opus-4-8"
 
     def __init__(
         self,

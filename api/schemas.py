@@ -141,6 +141,7 @@ class CourseGenerateRequest(BaseModel):
     course_title:       str | None = None
     target_audience:    str        = "learners"
     instructions:       str | None = Field(None, description="Additional instructions for the content generator (tone, focus areas, special requirements)")
+    user_instructions:  str | None = Field(None, description="Free-form instructions typed by the admin — injected verbatim into every generation stage as a strict, non-negotiable requirement")
     use_knowledge_base: bool       = Field(False, description="Enrich lesson context with semantically relevant chunks from all documents in the knowledge base, not just the source file")
     course_format:      str        = Field("standard", description="'standard' = auto-generated module/lesson structure; 'custom' = follow instructions as an exact blueprint (supports quizzes, specific slide counts, non-English languages, etc.)")
     language:           str        = Field("English", description="Language for all course content — e.g. 'English', 'Hindi', 'Spanish'")

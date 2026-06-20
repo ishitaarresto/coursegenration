@@ -75,6 +75,7 @@ class VideoRenderRequest(BaseModel):
 
     lang:  str = Field("en",      description='BCP-47 language code: "en", "hi", "ta", "te", …')
     style: str = Field("modern",  description='"modern" | "flatcolor" | "whiteboard"')
+    voice: str = Field("",        description='Sarvam speaker name override: "ritu", "rahul", "kavitha", … (empty = lang default)')
 
 
 class VideoRenderResponse(BaseModel):
@@ -91,6 +92,7 @@ class VideoRenderStatus(BaseModel):
     style:       str
     status:      str
     tts_engine:  str
+    voice:       str
     error:       str | None
     started_at:  float
     finished_at: float | None
@@ -115,6 +117,7 @@ def _job_to_status(job) -> VideoRenderStatus:
         style=job.style,
         status=job.status,
         tts_engine=job.tts_engine,
+        voice=job.voice or "",
         error=job.error,
         started_at=job.started_at,
         finished_at=job.finished_at,
@@ -220,6 +223,7 @@ async def render_video(
         lesson_ref=lesson_ref,
         lang=resolved_lang,
         style=request.style,
+        voice=request.voice,
     )
 
     if request.item_index is not None:
@@ -244,6 +248,7 @@ async def generate_all_videos(
     background_tasks: BackgroundTasks,
     style: str = "modern",
     lang:  str = "en",
+    voice: str = "",
 ):
     """
     Trigger video renders for every lesson in a course in one call.
@@ -314,6 +319,7 @@ async def generate_all_videos(
                     lesson_ref=lesson_ref,
                     lang=lang,
                     style=style,
+                    voice=voice,
                 )
                 background_tasks.add_task(
                     _staggered_lesson, job, les, job_index * _heygen_stagger
@@ -337,6 +343,7 @@ async def generate_all_videos(
                 lesson_ref=lesson_ref,
                 lang=lang,
                 style=style,
+                voice=voice,
             )
             background_tasks.add_task(
                 _staggered_item, job, item, job_index * _heygen_stagger

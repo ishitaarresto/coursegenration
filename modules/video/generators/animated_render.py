@@ -40,6 +40,7 @@ def generate_animated_video(
     narration_script: str,
     lang: str = "en",
     style: str = "modern",
+    voice: str | None = None,
 ) -> Path:
     """Render an animated teaching video for one lesson/slide.
 
@@ -52,13 +53,14 @@ def generate_animated_video(
     narration_script : already in the correct target language — passed directly to TTS
     lang             : BCP-47 language code ("en", "hi", "ta", …)
     style            : "modern" | "flatcolor" | "whiteboard"
+    voice            : Sarvam speaker name override (e.g. "ritu", "rahul") — None uses lang default
     """
     work = Path("media") / "animated" / str(lesson_id)
     work.mkdir(parents=True, exist_ok=True)
 
     # 1. Narration → MP3
     audio = work / f"{lang}.mp3"
-    synthesise(narration_script, lang, audio)
+    synthesise(narration_script, lang, audio, voice=voice)
     dur = _audio_len(audio)
 
     # 2. Build animated HTML scaled to audio length
@@ -78,6 +80,7 @@ def generate_whiteboard_video(
     lesson_content,
     narration_script: str,
     lang: str = "en",
+    voice: str | None = None,
 ) -> Path:
     """Free Playwright-based whiteboard video.
 
@@ -101,7 +104,7 @@ def generate_whiteboard_video(
 
     # 1. Narration audio + per-word timings
     audio = work / f"{lang}.mp3"
-    words = synthesise_with_timings(narration_script, lang, audio)
+    words = synthesise_with_timings(narration_script, lang, audio, voice=voice)
     dur = _audio_len(audio)
 
     # 2. LLM scene plan (never raises — falls back deterministically)

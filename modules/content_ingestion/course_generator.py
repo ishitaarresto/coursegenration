@@ -169,7 +169,10 @@ class CourseGenerator:
         These are HARD limits — enforced programmatically after outline generation.
         """
         d = duration_range.lower()
-        if "30" in d or "45" in d:
+        if "15" in d or "20" in d:
+            # 15-20 min total → 1 module, 2 lessons, 5-8 min/lesson
+            return 20, 1, 2, 5, 8
+        elif "30" in d or "45" in d:
             # 30-45 min total → 2 modules, 3 lessons each, 5-8 min/lesson
             return 45, 2, 3, 5, 8
         elif "3" in d and ("hour" in d or "+" in d):
@@ -186,7 +189,14 @@ class CourseGenerator:
     def _duration_prompt_rules(duration_range: str) -> str:
         """Returns the duration constraints as a formatted string for Claude prompts."""
         d = duration_range.lower()
-        if "30" in d or "45" in d:
+        if "15" in d or "20" in d:
+            return (
+                "TOTAL DURATION: 15 to 20 minutes maximum\n"
+                "  - 1 module only\n"
+                "  - 2 lessons maximum\n"
+                "  - 5 to 8 minutes per lesson (duration_minutes between 5 and 8)"
+            )
+        elif "30" in d or "45" in d:
             return (
                 "TOTAL DURATION: 30 to 45 minutes maximum\n"
                 "  - 1 to 2 modules\n"
@@ -406,6 +416,20 @@ class CourseGenerator:
 
     # ── Public API ──────────────────────────────────────────────────────────────
 
+    @staticmethod
+    def _user_req_block(user_instructions: str | None) -> str:
+        """Format admin's free-form instructions as a strict constraint block."""
+        if not user_instructions or not user_instructions.strip():
+            return ""
+        return (
+            "\nCRITICAL USER REQUIREMENTS — FOLLOW EXACTLY:\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"{user_instructions.strip()}\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            "These are NON-NEGOTIABLE requirements from the course designer.\n"
+            "They override all defaults above. Implement them literally.\n"
+        )
+
     def generate(
         self,
         source_file:        str,
@@ -413,6 +437,7 @@ class CourseGenerator:
         target_audience:    str = "learners",
         progress_callback:  "Callable[[int, int], None] | None" = None,
         instructions:       str | None = None,
+        user_instructions:  str | None = None,
         use_knowledge_base: bool = False,
         language:           str = "English",
         duration_range:     str = "60-90 minutes",
@@ -455,14 +480,16 @@ class CourseGenerator:
         )
         logger.info("%d chunks loaded (%d chars).", len(chunks), len(full_content))
 
+        user_req = self._user_req_block(user_instructions)
+
         # Step 1 — analyse
         logger.info("Step 1/3: Analysing content ...")
-        analysis = self._analyse(full_content, source_file, target_audience, parsed, language)
+        analysis = self._analyse(full_content, source_file, target_audience, parsed, language, user_req)
 
         # Step 2 — outline (with duration constraints baked into the prompt)
         logger.info("Step 2/3: Building course outline ...")
         title = course_title or analysis.get("suggested_title", source_file)
-        outline = self._outline(analysis, title, target_audience, parsed, language, duration_range)
+        outline = self._outline(analysis, title, target_audience, parsed, language, duration_range, user_req)
 
         # Hard-clamp the outline regardless of what Claude returned
         outline = self._enforce_duration(outline, duration_range)
@@ -473,7 +500,7 @@ class CourseGenerator:
         # Step 3 — script each lesson
         modules = self._script_all(
             outline, full_content, target_audience, source_file,
-            progress_callback, parsed, use_knowledge_base, language,
+            progress_callback, parsed, use_knowledge_base, language, user_req,
         )
 
         total_mins = sum(l.duration_minutes for m in modules for l in m.lessons)
@@ -495,6 +522,7 @@ class CourseGenerator:
         audience:   str,
         parsed:     dict,
         language:   str,
+        user_req:   str = "",
     ) -> dict:
         topic_line       = f"TOPIC FOCUS: {parsed['topic']}" if parsed.get("topic") else ""
         description_line = f"COURSE DESCRIPTION: {parsed['description']}" if parsed.get("description") else ""
@@ -509,7 +537,7 @@ TARGET AUDIENCE: {audience}
 {topic_line}
 {description_line}
 {difficulty_line}
-═════════════════════════════════════════════════════════════════
+{user_req}═════════════════════════════════════════════════════════════════
 
 DOCUMENT CONTENT:
 {content[:6000]}
@@ -539,6 +567,7 @@ Return ONLY the JSON, no other text.
         parsed:         dict,
         language:       str  = "English",
         duration_range: str  = "60-90 minutes",
+        user_req:       str  = "",
     ) -> dict:
         _, _, _, min_les_min, max_les_min = self._duration_limits(duration_range)
         example_dur = (min_les_min + max_les_min) // 2
@@ -563,7 +592,7 @@ OUTPUT LANGUAGE: {language}
 {objectives_line}
 {depth_line}
 {tone_line}
-═════════════════════════════════════════════════════════════════
+{user_req}═════════════════════════════════════════════════════════════════
 
 CONTENT ANALYSIS:
 {json.dumps(analysis, indent=2, ensure_ascii=False)}
@@ -612,6 +641,7 @@ Return ONLY the JSON.
         parsed:             dict | None = None,
         use_knowledge_base: bool = False,
         language:           str = "English",
+        user_req:           str = "",
     ) -> list[ModuleScript]:
         parsed = parsed or {}
         total = sum(len(m["lessons"]) for m in outline["modules"])
@@ -626,7 +656,7 @@ Return ONLY the JSON.
                     try:
                         ls = self._script_lesson(
                             les, mod, content, audience, source_file,
-                            parsed, use_knowledge_base, language,
+                            parsed, use_knowledge_base, language, user_req,
                         )
                         last_exc = None
                         break
@@ -663,6 +693,7 @@ Return ONLY the JSON.
         parsed:             dict | None = None,
         use_knowledge_base: bool = False,
         language:           str = "English",
+        user_req:           str = "",
     ) -> LessonScript:
         parsed = parsed or {}
         context = self._get_lesson_context(
@@ -687,7 +718,7 @@ OUTPUT LANGUAGE: {language}
 {objectives_line}
 {depth_line}
 {tone_line}
-═════════════════════════════════════════════════════════════════
+{user_req}═════════════════════════════════════════════════════════════════
 
 MODULE:      {module['module_title']}
 LESSON:      {lesson['lesson_title']}

@@ -106,11 +106,12 @@ def _wav_bytes_to_mp3(wav_bytes: bytes, out_path: Path) -> None:
         raise RuntimeError(f"ffmpeg wav→mp3 failed: {result.stderr.decode()}")
 
 
-def synthesise(text: str, lang: str, output_path: Path) -> Path:
+def synthesise(text: str, lang: str, output_path: Path, speaker: str | None = None) -> Path:
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    lang_code, speaker = SARVAM_VOICES[lang.lower()]
+    lang_code, default_speaker = SARVAM_VOICES[lang.lower()]
+    effective_speaker = speaker if speaker else default_speaker
     chunks = _chunk_text(text)
-    mp3_chunks = [_synth_chunk(c, lang_code, speaker) for c in chunks]
+    mp3_chunks = [_synth_chunk(c, lang_code, effective_speaker) for c in chunks]
     output_path.write_bytes(b"".join(mp3_chunks))
     return output_path
 
@@ -122,23 +123,25 @@ class SarvamTTSEngine:
     audio and voice routers without any further changes to those routers.
     """
 
-    def __init__(self, lang: str = "en-in"):
+    def __init__(self, lang: str = "en-in", speaker: str | None = None):
         lang_key = lang.lower()
         self.lang = lang_key if lang_key in SARVAM_SUPPORTED else "en-in"
+        self._speaker_override = speaker
 
     def synthesize_bytes(self, text: str) -> bytes:
-        lang_code, speaker = SARVAM_VOICES[self.lang]
+        lang_code, default_speaker = SARVAM_VOICES[self.lang]
+        speaker = self._speaker_override if self._speaker_override else default_speaker
         chunks = _chunk_text(text)
         return b"".join(_synth_chunk(c, lang_code, speaker) for c in chunks)
 
 
-def synthesise_with_timings(text: str, lang: str, output_path: Path) -> list[dict]:
+def synthesise_with_timings(text: str, lang: str, output_path: Path, speaker: str | None = None) -> list[dict]:
     """Synthesise → MP3 and return [{word, start, end}] with proportional timing."""
     import re as _re
     import subprocess as _sp
     from modules.video.generators.video import _ffprobe
 
-    synthesise(text, lang, output_path)
+    synthesise(text, lang, output_path, speaker=speaker)
     r = _sp.run(
         [_ffprobe(), "-v", "error", "-show_entries", "format=duration",
          "-of", "default=noprint_wrappers=1:nokey=1", str(output_path)],

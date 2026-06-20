@@ -77,8 +77,46 @@ def init_db() -> None:
     import api.models  # noqa: F401 — registers all ORM models with Base
     Base.metadata.create_all(bind=engine)
     _migrate_course_scripts()
+    _migrate_video_renders()
     db_type = "PostgreSQL" if _is_postgres else "SQLite"
     print(f"[db] {db_type} database initialised (all tables ready).")
+
+
+def _migrate_video_renders() -> None:
+    """Add new columns to video_renders if they don't exist yet."""
+    from sqlalchemy import text
+
+    new_cols = [
+        ("voice", "TEXT", "''", False),
+    ]
+
+    with engine.connect() as conn:
+        if _is_postgres:
+            for col, typ, default, nullable in new_cols:
+                null_clause = "" if nullable else f" NOT NULL DEFAULT {default}"
+                try:
+                    conn.execute(text(
+                        f"ALTER TABLE video_renders ADD COLUMN IF NOT EXISTS "
+                        f"{col} {typ}{null_clause}"
+                    ))
+                    conn.commit()
+                except Exception:
+                    conn.rollback()
+        else:
+            result   = conn.execute(text("PRAGMA table_info(video_renders)"))
+            existing = {row[1] for row in result}
+            for col, typ, default, nullable in new_cols:
+                if col not in existing:
+                    if nullable:
+                        conn.execute(text(
+                            f"ALTER TABLE video_renders ADD COLUMN {col} {typ}"
+                        ))
+                    else:
+                        conn.execute(text(
+                            f"ALTER TABLE video_renders ADD COLUMN "
+                            f"{col} {typ} NOT NULL DEFAULT {default}"
+                        ))
+            conn.commit()
 
 
 def _migrate_course_scripts() -> None:

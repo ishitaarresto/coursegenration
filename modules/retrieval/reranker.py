@@ -9,15 +9,15 @@ fine-grained interactions between the two.  Much more accurate for ranking
 but too slow to run on all 598 chunks, so we run it only on the top-20
 candidates already narrowed down by hybrid search.
 
-Model:     cross-encoder/ms-marco-MiniLM-L-6-v2  (~67 MB, free, local)
-Latency:   ~150-200ms for 20 candidates on CPU
+Model:     BAAI/bge-reranker-large  (~560 MB, free, local)
+Latency:   ~300-500ms for 20 candidates on CPU
 """
 from __future__ import annotations
 import logging
 
 logger = logging.getLogger("arresto.retrieval.reranker")
 
-_DEFAULT_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+_DEFAULT_MODEL = "BAAI/bge-reranker-large"
 
 
 class Reranker:
