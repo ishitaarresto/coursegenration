@@ -14,8 +14,15 @@ Steps:
 
 import os
 import sys
+import io
 import sqlite3
 from pathlib import Path
+
+# Force UTF-8 output so Hindi/Unicode characters in course data don't crash the print
+if hasattr(sys.stdout, "buffer"):
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "buffer"):
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
 
 # ── Load .env into os.environ BEFORE importing api.db ─────────────────────────
 # api/db.py reads DATABASE_URL at import time via os.getenv(), so we must

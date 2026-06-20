@@ -131,7 +131,7 @@ def _migrate_course_scripts() -> None:
     new_cols = [
         ("language",                   "TEXT",    "'English'", False),
         ("difficulty",                 "TEXT",    "''",        False),
-        ("published",                  "INTEGER", "0",         False),
+        ("published",                  "INTEGER", "false",     False),
         ("assessment_num_questions",   "INTEGER", "5",         False),
         ("assessment_pass_pct",        "INTEGER", "70",        False),
         ("assessment_time_min",        "INTEGER", "30",        False),
