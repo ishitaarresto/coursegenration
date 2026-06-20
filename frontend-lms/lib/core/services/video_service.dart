@@ -8,6 +8,7 @@ class VideoRenderJob {
   final String style;
   final String status;     // pending | processing | completed | failed
   final String ttsEngine;
+  final String voice;
   final String? error;
   final double startedAt;
   final double? finishedAt;
@@ -21,6 +22,7 @@ class VideoRenderJob {
     required this.style,
     required this.status,
     required this.ttsEngine,
+    this.voice = '',
     this.error,
     required this.startedAt,
     this.finishedAt,
@@ -35,6 +37,7 @@ class VideoRenderJob {
         style:      j['style'] as String? ?? 'animated_scene',
         status:     j['status'] as String,
         ttsEngine:  j['tts_engine'] as String? ?? '',
+        voice:      j['voice'] as String? ?? '',
         error:      j['error'] as String?,
         startedAt:  (j['started_at'] as num).toDouble(),
         finishedAt: (j['finished_at'] as num?)?.toDouble(),
@@ -49,12 +52,48 @@ class VideoService {
     String scriptId, {
     String style = 'modern',
     String lang = 'en',
+    String voice = '',
   }) async {
+    final params = <String, String>{'style': style, 'lang': lang};
+    if (voice.isNotEmpty) params['voice'] = voice;
     final resp = await apiClient.post(
       '/api/v1/video/generate-all/$scriptId',
-      queryParameters: {'style': style, 'lang': lang},
+      queryParameters: params,
     );
     return (resp.data['jobs_started'] as num).toInt();
+  }
+
+  /// Trigger a single lesson render with optional voice/style overrides.
+  static Future<VideoRenderJob> renderLesson(
+    String scriptId, {
+    int? moduleNumber,
+    int? lessonNumber,
+    int? itemIndex,
+    String lang = 'en',
+    String style = 'modern',
+    String voice = '',
+  }) async {
+    final resp = await apiClient.post('/api/v1/video/render', data: {
+      'script_id': scriptId,
+      if (moduleNumber != null) 'module_number': moduleNumber,
+      if (lessonNumber != null) 'lesson_number': lessonNumber,
+      if (itemIndex != null) 'item_index': itemIndex,
+      'lang': lang,
+      'style': style,
+      'voice': voice,
+    });
+    return VideoRenderJob(
+      renderId:   resp.data['render_id'] as String,
+      scriptId:   scriptId,
+      lessonRef:  '',
+      lang:       lang,
+      style:      style,
+      status:     resp.data['status'] as String,
+      ttsEngine:  '',
+      voice:      voice,
+      videoReady: false,
+      startedAt:  0,
+    );
   }
 
   /// List all render jobs for a course.

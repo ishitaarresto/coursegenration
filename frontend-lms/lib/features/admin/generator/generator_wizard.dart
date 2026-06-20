@@ -25,10 +25,11 @@ class _CourseGeneratorWizardState
   int _step = 0;
 
   // Step 0: Requirements
-  final _titleCtrl       = TextEditingController();
-  final _topicCtrl       = TextEditingController();
-  final _descCtrl        = TextEditingController();
-  final _objectivesCtrl  = TextEditingController();
+  final _titleCtrl        = TextEditingController();
+  final _topicCtrl        = TextEditingController();
+  final _descCtrl         = TextEditingController();
+  final _objectivesCtrl   = TextEditingController();
+  final _userInstructCtrl = TextEditingController();
   String _audience       = 'Construction workers';
   String _difficulty     = 'Beginner';
   String _courseLength   = '60-90 minutes';
@@ -41,6 +42,10 @@ class _CourseGeneratorWizardState
 
   // Step 5: Language
   String _language = 'English';
+
+  // Step 6: Voices
+  String _transcriptVoice = 'ritu';
+  String _videoVoice = 'ritu';
 
   // Course script output
   Map<String, dynamic>? _courseScript;
@@ -99,7 +104,7 @@ class _CourseGeneratorWizardState
       // Queue video generation for all lessons (fire-and-forget)
       if (_publishModeApi != 'draft') {
         final langCode = _langCode[_language] ?? 'en';
-        VideoService.generateAll(_scriptId!, style: _videoStyle, lang: langCode)
+        VideoService.generateAll(_scriptId!, style: _videoStyle, lang: langCode, voice: _videoVoice)
             .then((count) {
           if (!mounted) return;
           setState(() => _videoQueued = true);
@@ -132,6 +137,7 @@ class _CourseGeneratorWizardState
     _topicCtrl.dispose();
     _descCtrl.dispose();
     _objectivesCtrl.dispose();
+    _userInstructCtrl.dispose();
     super.dispose();
   }
 
@@ -323,6 +329,7 @@ class _CourseGeneratorWizardState
           topicCtrl: _topicCtrl,
           descCtrl: _descCtrl,
           objectivesCtrl: _objectivesCtrl,
+          userInstructCtrl: _userInstructCtrl,
           audience: _audience,
           onAudienceChanged: (v) {
             if (v != null) setState(() => _audience = v);
@@ -345,6 +352,7 @@ class _CourseGeneratorWizardState
           topicCtrl: _topicCtrl,
           descCtrl: _descCtrl,
           objectivesCtrl: _objectivesCtrl,
+          userInstructCtrl: _userInstructCtrl,
           audience: _audience,
           difficulty: _difficulty,
           courseLength: _courseLength,
@@ -359,10 +367,20 @@ class _CourseGeneratorWizardState
       5 => _StepLanguage(
           language: _language,
           onLanguageChanged: (v) => setState(() => _language = v),
+          transcriptVoice: _transcriptVoice,
+          onTranscriptVoiceChanged: (v) => setState(() => _transcriptVoice = v),
+          videoVoice: _videoVoice,
+          onVideoVoiceChanged: (v) => setState(() => _videoVoice = v),
         ),
       6 => _StepReview(
           title: _titleCtrl.text,
+          audience: _audience,
+          difficulty: _difficulty,
+          courseLength: _courseLength,
           language: _language,
+          videoStyle: _videoStyle,
+          transcriptVoice: _transcriptVoice,
+          videoVoice: _videoVoice,
           courseScript: _courseScript,
         ),
       7 => _StepAssessment(scriptId: _scriptId),
@@ -392,6 +410,7 @@ class _StepRequirements extends StatelessWidget {
   final TextEditingController topicCtrl;
   final TextEditingController descCtrl;
   final TextEditingController objectivesCtrl;
+  final TextEditingController userInstructCtrl;
   final String audience;
   final ValueChanged<String?> onAudienceChanged;
   final String difficulty;
@@ -406,6 +425,7 @@ class _StepRequirements extends StatelessWidget {
     required this.topicCtrl,
     required this.descCtrl,
     required this.objectivesCtrl,
+    required this.userInstructCtrl,
     required this.audience,
     required this.onAudienceChanged,
     required this.difficulty,
@@ -547,6 +567,7 @@ class _StepRequirements extends StatelessWidget {
                       value: courseLength,
                       decoration: const InputDecoration(),
                       items: const [
+                        '15-20 minutes',
                         '30-45 minutes',
                         '60-90 minutes',
                         '2-3 hours',
@@ -574,12 +595,15 @@ class _StepRequirements extends StatelessWidget {
                       items: const [
                         'English',
                         'Hindi',
-                        'Spanish',
-                        'French',
-                        'German',
-                        'Arabic',
-                        'Portuguese',
-                        'Chinese (Simplified)',
+                        'Tamil',
+                        'Telugu',
+                        'Kannada',
+                        'Malayalam',
+                        'Bengali',
+                        'Marathi',
+                        'Gujarati',
+                        'Punjabi',
+                        'Odia',
                       ]
                           .map((o) => DropdownMenuItem(value: o, child: Text(o)))
                           .toList(),
@@ -591,6 +615,75 @@ class _StepRequirements extends StatelessWidget {
                 ),
               ),
             ],
+          ),
+
+          // ── Generation Instructions ───────────────────────────────────────
+          const SizedBox(height: 20),
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: ArrestoColors.orangeTint,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                  color: ArrestoColors.orange.withValues(alpha: 0.35)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.edit_note_rounded,
+                        size: 16, color: ArrestoColors.orange),
+                    const SizedBox(width: 6),
+                    Text('Generation Instructions',
+                        style: ArrestoText.label()
+                            .copyWith(color: ArrestoColors.orange)),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Type exactly how you want the course generated. '
+                  'The AI will follow these strictly — language, topics, structure, tone, anything.',
+                  style: ArrestoText.xs(color: ArrestoColors.textMuted),
+                ),
+                const SizedBox(height: 10),
+                TextFormField(
+                  controller: userInstructCtrl,
+                  maxLines: null,
+                  minLines: 6,
+                  style: const TextStyle(fontSize: 13, height: 1.6),
+                  decoration: InputDecoration(
+                    hintText:
+                        'e.g. Generate the entire course in Hindi. Cover these topics in this order: '
+                        '1. Legal framework  2. Hazard identification  3. PPE use. '
+                        'Use simple language suitable for field workers. '
+                        'Include 3 quiz questions after each module.',
+                    hintStyle: TextStyle(
+                        color: ArrestoColors.textMuted2, fontSize: 12),
+                    filled: true,
+                    fillColor: ArrestoColors.surface,
+                    contentPadding: const EdgeInsets.all(14),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide(
+                          color: ArrestoColors.orange
+                              .withValues(alpha: 0.3)),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide(
+                          color: ArrestoColors.orange
+                              .withValues(alpha: 0.3)),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(
+                          color: ArrestoColors.orange, width: 1.5),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -916,6 +1009,7 @@ class _StepScript extends StatefulWidget {
   final TextEditingController topicCtrl;
   final TextEditingController descCtrl;
   final TextEditingController objectivesCtrl;
+  final TextEditingController userInstructCtrl;
   final String audience;
   final String difficulty;
   final String courseLength;
@@ -929,6 +1023,7 @@ class _StepScript extends StatefulWidget {
     required this.topicCtrl,
     required this.descCtrl,
     required this.objectivesCtrl,
+    required this.userInstructCtrl,
     required this.audience,
     required this.difficulty,
     required this.courseLength,
@@ -990,6 +1085,8 @@ class _StepScriptState extends State<_StepScript> {
       if (_tone != 'Conversational') parts.add('Tone: $_tone.');
       final instructions = parts.isEmpty ? null : parts.join(' ');
 
+      final rawUserInstructions = widget.userInstructCtrl.text.trim();
+
       final jobId = await CourseService.generateCourse(
         sourceFile: widget.selectedDoc!,
         courseTitle: widget.titleCtrl.text.trim().isEmpty
@@ -997,6 +1094,7 @@ class _StepScriptState extends State<_StepScript> {
             : widget.titleCtrl.text.trim(),
         targetAudience: widget.audience,
         instructions: instructions,
+        userInstructions: rawUserInstructions.isEmpty ? null : rawUserInstructions,
         language: widget.language,
         durationRange: widget.courseLength,
       );
@@ -1483,10 +1581,18 @@ class _StepStyleState extends State<_StepStyle> {
 class _StepLanguage extends StatefulWidget {
   final String language;
   final ValueChanged<String> onLanguageChanged;
+  final String transcriptVoice;
+  final ValueChanged<String> onTranscriptVoiceChanged;
+  final String videoVoice;
+  final ValueChanged<String> onVideoVoiceChanged;
 
   const _StepLanguage({
     required this.language,
     required this.onLanguageChanged,
+    required this.transcriptVoice,
+    required this.onTranscriptVoiceChanged,
+    required this.videoVoice,
+    required this.onVideoVoiceChanged,
   });
 
   @override
@@ -1494,166 +1600,499 @@ class _StepLanguage extends StatefulWidget {
 }
 
 class _StepLanguageState extends State<_StepLanguage> {
-  bool _subtitles = true;
-
   static const _languages = [
-    ('English', '🇺🇸'),
-    ('Spanish', '🇪🇸'),
-    ('French', '🇫🇷'),
-    ('German', '🇩🇪'),
-    ('Chinese (Simplified)', '🇨🇳'),
-    ('Arabic', '🇸🇦'),
-    ('Portuguese', '🇧🇷'),
-    ('Hindi', '🇮🇳'),
+    ('English',   '🇮🇳', 'en'),
+    ('Hindi',     '🇮🇳', 'hi'),
+    ('Tamil',     '🇮🇳', 'ta'),
+    ('Telugu',    '🇮🇳', 'te'),
+    ('Kannada',   '🇮🇳', 'kn'),
+    ('Malayalam', '🇮🇳', 'ml'),
+    ('Bengali',   '🇮🇳', 'bn'),
+    ('Marathi',   '🇮🇳', 'mr'),
+    ('Gujarati',  '🇮🇳', 'gu'),
+    ('Punjabi',   '🇮🇳', 'pa'),
+    ('Odia',      '🇮🇳', 'od'),
+  ];
+
+  static const _voices = [
+    ('ritu',    'Ritu',    'Female', false),
+    ('rahul',   'Rahul',   'Male',   true),
+    ('kavitha', 'Kavitha', 'Female', false),
+    ('gokul',   'Gokul',   'Male',   true),
+    ('priya',   'Priya',   'Female', false),
+    ('kavya',   'Kavya',   'Female', false),
+    ('ishita',  'Ishita',  'Female', false),
+    ('pooja',   'Pooja',   'Female', false),
+    ('simran',  'Simran',  'Female', false),
+    ('neha',    'Neha',    'Female', false),
   ];
 
   @override
   Widget build(BuildContext context) {
-    return ArrestoCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SectionHeader(
-            icon: Icons.language_rounded,
-            title: 'Language & Voice',
-            subtitle: 'Configure output language and voice settings',
-          ),
-          const SizedBox(height: 16),
-          Text('Primary Language', style: ArrestoText.label()),
-          const SizedBox(height: 8),
-          GridView.builder(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
-              maxCrossAxisExtent: 180,
-              crossAxisSpacing: 8,
-              mainAxisSpacing: 8,
-              childAspectRatio: 2.5,
-            ),
-            itemCount: _languages.length,
-            itemBuilder: (ctx, i) {
-              final l = _languages[i];
-              final isSelected = widget.language == l.$1;
-              return GestureDetector(
-                onTap: () => widget.onLanguageChanged(l.$1),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 120),
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 12, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: isSelected
-                        ? ArrestoColors.amberSoft
-                        : ArrestoColors.surface,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(
-                      color: isSelected
-                          ? ArrestoColors.amber
-                          : ArrestoColors.line,
-                    ),
-                  ),
-                  child: Row(
-                    children: [
-                      Text(l.$2,
-                          style: const TextStyle(fontSize: 16)),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: Text(l.$1,
-                            style: ArrestoText.bodySm(
-                                color: isSelected
-                                    ? ArrestoColors.ink
-                                    : null),
-                            overflow: TextOverflow.ellipsis),
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            },
-          ),
-          const SizedBox(height: 16),
-          Row(
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Card 1: Language
+        ArrestoCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                child: Text('Include subtitles / captions',
-                    style:
-                        ArrestoText.body(color: ArrestoColors.ink)),
+              SectionHeader(
+                icon: Icons.language_rounded,
+                title: 'Course Language',
+                subtitle: 'Select the primary language for content generation',
               ),
-              Switch(
-                value: _subtitles,
-                onChanged: (v) => setState(() => _subtitles = v),
-                activeColor: ArrestoColors.amber,
+              const SizedBox(height: 16),
+              GridView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                gridDelegate:
+                    const SliverGridDelegateWithMaxCrossAxisExtent(
+                  maxCrossAxisExtent: 160,
+                  crossAxisSpacing: 8,
+                  mainAxisSpacing: 8,
+                  childAspectRatio: 2.8,
+                ),
+                itemCount: _languages.length,
+                itemBuilder: (ctx, i) {
+                  final l = _languages[i];
+                  final isSelected = widget.language == l.$1;
+                  return GestureDetector(
+                    onTap: () => widget.onLanguageChanged(l.$1),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 120),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 10, vertical: 7),
+                      decoration: BoxDecoration(
+                        color: isSelected
+                            ? ArrestoColors.amberSoft
+                            : ArrestoColors.surfaceSoft,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: isSelected
+                              ? ArrestoColors.amber
+                              : ArrestoColors.line,
+                          width: isSelected ? 1.5 : 1,
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Text(l.$2,
+                              style: const TextStyle(fontSize: 14)),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(l.$1,
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: isSelected
+                                      ? FontWeight.w700
+                                      : FontWeight.w500,
+                                  color: isSelected
+                                      ? ArrestoColors.ink
+                                      : ArrestoColors.textSecondary,
+                                ),
+                                overflow: TextOverflow.ellipsis),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
               ),
             ],
           ),
-        ],
-      ),
+        ),
+        const SizedBox(height: 14),
+
+        // Card 2: Transcript Voice
+        ArrestoCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SectionHeader(
+                icon: Icons.mic_rounded,
+                title: 'Transcript Narration Voice',
+                subtitle: 'Voice for lesson audio narration (Sarvam Bulbul-v3)',
+              ),
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: ArrestoColors.blueSoft.withOpacity(0.4),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                      color: ArrestoColors.blue.withOpacity(0.2)),
+                ),
+                child: Row(children: [
+                  Icon(Icons.info_outline_rounded,
+                      size: 14, color: ArrestoColors.blue),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'Used when learners play lesson narration audio',
+                      style: ArrestoText.xs(color: ArrestoColors.blue),
+                    ),
+                  ),
+                ]),
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: _voices.map((v) {
+                  final selected = widget.transcriptVoice == v.$1;
+                  final isMale = v.$4;
+                  return GestureDetector(
+                    onTap: () =>
+                        widget.onTranscriptVoiceChanged(v.$1),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 110),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: selected
+                            ? ArrestoColors.blueSoft
+                            : ArrestoColors.surfaceSoft,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: selected
+                              ? ArrestoColors.blue
+                              : ArrestoColors.line,
+                          width: selected ? 1.5 : 1,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            isMale
+                                ? Icons.person_2_rounded
+                                : Icons.person_rounded,
+                            size: 14,
+                            color: selected
+                                ? ArrestoColors.blue
+                                : ArrestoColors.textMuted2,
+                          ),
+                          const SizedBox(width: 6),
+                          Column(
+                            crossAxisAlignment:
+                                CrossAxisAlignment.start,
+                            children: [
+                              Text(v.$2,
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: selected
+                                        ? FontWeight.w700
+                                        : FontWeight.w500,
+                                    color: selected
+                                        ? ArrestoColors.blue
+                                        : ArrestoColors.textPrimary,
+                                  )),
+                              Text(v.$3,
+                                  style: ArrestoText.xs(
+                                      color: selected
+                                          ? ArrestoColors.blue
+                                          : null)),
+                            ],
+                          ),
+                          if (selected) ...[
+                            const SizedBox(width: 6),
+                            Icon(Icons.check_circle_rounded,
+                                size: 14,
+                                color: ArrestoColors.blue),
+                          ],
+                        ],
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+
+        // Card 3: Video Voice
+        ArrestoCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SectionHeader(
+                icon: Icons.videocam_rounded,
+                title: 'Video Generation Voice',
+                subtitle: 'Voice for AI-generated lesson videos (Sarvam Bulbul-v3)',
+              ),
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: ArrestoColors.orangeTint,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                      color: ArrestoColors.orange.withOpacity(0.2)),
+                ),
+                child: Row(children: [
+                  Icon(Icons.info_outline_rounded,
+                      size: 14, color: ArrestoColors.orange),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'Used for the voiceover in generated MP4 lesson videos',
+                      style:
+                          ArrestoText.xs(color: ArrestoColors.orange),
+                    ),
+                  ),
+                ]),
+              ),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: _voices.map((v) {
+                  final selected = widget.videoVoice == v.$1;
+                  final isMale = v.$4;
+                  return GestureDetector(
+                    onTap: () => widget.onVideoVoiceChanged(v.$1),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 110),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: selected
+                            ? ArrestoColors.orangeTint
+                            : ArrestoColors.surfaceSoft,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: selected
+                              ? ArrestoColors.orange
+                              : ArrestoColors.line,
+                          width: selected ? 1.5 : 1,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            isMale
+                                ? Icons.person_2_rounded
+                                : Icons.person_rounded,
+                            size: 14,
+                            color: selected
+                                ? ArrestoColors.orange
+                                : ArrestoColors.textMuted2,
+                          ),
+                          const SizedBox(width: 6),
+                          Column(
+                            crossAxisAlignment:
+                                CrossAxisAlignment.start,
+                            children: [
+                              Text(v.$2,
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: selected
+                                        ? FontWeight.w700
+                                        : FontWeight.w500,
+                                    color: selected
+                                        ? ArrestoColors.orange
+                                        : ArrestoColors.textPrimary,
+                                  )),
+                              Text(v.$3,
+                                  style: ArrestoText.xs(
+                                      color: selected
+                                          ? ArrestoColors.orange
+                                          : null)),
+                            ],
+                          ),
+                          if (selected) ...[
+                            const SizedBox(width: 6),
+                            Icon(Icons.check_circle_rounded,
+                                size: 14,
+                                color: ArrestoColors.orange),
+                          ],
+                        ],
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 }
 
 // ── Step 7: Review ────────────────────────────────────────────────────────────
 
-class _StepReview extends StatelessWidget {
+class _StepReview extends StatefulWidget {
   final String title;
+  final String audience;
+  final String difficulty;
+  final String courseLength;
   final String language;
+  final String videoStyle;
+  final String transcriptVoice;
+  final String videoVoice;
   final Map<String, dynamic>? courseScript;
 
-  const _StepReview({required this.title, required this.language, this.courseScript});
+  const _StepReview({
+    required this.title,
+    required this.audience,
+    required this.difficulty,
+    required this.courseLength,
+    required this.language,
+    required this.videoStyle,
+    required this.transcriptVoice,
+    required this.videoVoice,
+    this.courseScript,
+  });
+
+  @override
+  State<_StepReview> createState() => _StepReviewState();
+}
+
+class _StepReviewState extends State<_StepReview> {
+  // Track which modules are expanded in the outline
+  final Set<int> _expandedModules = {0};
+
+  static const _styleLabels = {
+    'animated_scene':    'Animated Scene',
+    'whiteboard_doodle': 'Whiteboard Doodle',
+    'modern':            'AI Presenter',
+    'hybrid':            'Hybrid',
+  };
+
+  static const _styleIcons = {
+    'animated_scene':    Icons.animation_rounded,
+    'whiteboard_doodle': Icons.draw_rounded,
+    'modern':            Icons.smart_display_rounded,
+    'hybrid':            Icons.auto_awesome_rounded,
+  };
+
+  static const _styleToThumb = {
+    'animated_scene':    CourseStyle.animated,
+    'whiteboard_doodle': CourseStyle.whiteboard,
+    'modern':            CourseStyle.claude,
+    'hybrid':            CourseStyle.hybrid,
+  };
+
+  static const _voiceLabels = {
+    'ritu':    'Ritu',
+    'rahul':   'Rahul',
+    'kavitha': 'Kavitha',
+    'gokul':   'Gokul',
+    'priya':   'Priya',
+    'kavya':   'Kavya',
+    'ishita':  'Ishita',
+    'pooja':   'Pooja',
+    'simran':  'Simran',
+    'neha':    'Neha',
+  };
+
+  static const _voiceGenders = {
+    'ritu':    'Female',
+    'rahul':   'Male',
+    'kavitha': 'Female',
+    'gokul':   'Male',
+    'priya':   'Female',
+    'kavya':   'Female',
+    'ishita':  'Female',
+    'pooja':   'Female',
+    'simran':  'Female',
+    'neha':    'Female',
+  };
 
   @override
   Widget build(BuildContext context) {
-    final displayTitle = courseScript?['course_title'] as String? ??
-        (title.isNotEmpty ? title : 'Working at Heights — Foundation');
-    final modules = courseScript?['modules'] as List? ?? [];
-    final lessons = modules.fold<int>(0, (sum, m) {
-      final lessonList = (m as Map<String, dynamic>)['lessons'] as List? ?? [];
-      return sum + lessonList.length;
+    final script     = widget.courseScript;
+    final hasScript  = script != null;
+
+    final displayTitle = script?['course_title'] as String? ??
+        (widget.title.isNotEmpty ? widget.title : 'Untitled Course');
+    final description  = script?['description'] as String? ?? '';
+    final objectives   = (script?['learning_objectives'] as List?)
+            ?.map((o) => o.toString())
+            .toList() ??
+        [];
+    final modules      = (script?['modules'] as List?) ?? [];
+    final totalLessons = modules.fold<int>(0, (sum, m) {
+      final ls = (m as Map<String, dynamic>)['lessons'] as List? ?? [];
+      return sum + ls.length;
     });
     final duration =
-        (courseScript?['estimated_total_duration_min'] as num?)?.toInt() ?? 0;
+        (script?['estimated_total_duration_min'] as num?)?.toInt() ?? 0;
+
+    final eyebrow = [
+      if (widget.audience.isNotEmpty) widget.audience.toUpperCase(),
+      if (widget.difficulty.isNotEmpty) widget.difficulty.toUpperCase(),
+    ].join(' · ');
+
+    final thumbStyle =
+        _styleToThumb[widget.videoStyle] ?? CourseStyle.claude;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text('Review Course', style: ArrestoText.h3()),
-        const SizedBox(height: 6),
-        Text('Confirm everything looks correct before generating',
+        const SizedBox(height: 4),
+        Text('Confirm everything looks correct before publishing.',
             style: ArrestoText.small()),
-        const SizedBox(height: 16),
+        const SizedBox(height: 20),
+
+        // ── No-script warning ───────────────────────────────────────────────
+        if (!hasScript) ...[
+          _WarningBanner(
+            icon: Icons.warning_amber_rounded,
+            color: const Color(0xFFF59E0B),
+            message:
+                'Script not generated yet — go back to Step 4 (Script) and generate the course script first.',
+          ),
+          const SizedBox(height: 16),
+        ],
+
+        // ── Course header card ──────────────────────────────────────────────
         ArrestoCard(
           padding: EdgeInsets.zero,
           child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               ClipRRect(
                 borderRadius:
                     const BorderRadius.vertical(top: Radius.circular(15)),
-                child: const CourseThumb(
-                    style: CourseStyle.animated, height: 160),
+                child: CourseThumb(style: thumbStyle, height: 160),
               ),
               Padding(
-                padding: const EdgeInsets.all(18),
+                padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('FALL PROTECTION · BEGINNER',
-                        style: ArrestoText.eyebrow()),
+                    if (eyebrow.isNotEmpty)
+                      Text(eyebrow, style: ArrestoText.eyebrow()),
                     const SizedBox(height: 4),
                     Text(displayTitle, style: ArrestoText.h2()),
-                    const SizedBox(height: 8),
-                    Row(
+                    if (description.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Text(description,
+                          style: ArrestoText.small(
+                              color: ArrestoColors.textMuted),
+                          maxLines: 3,
+                          overflow: TextOverflow.ellipsis),
+                    ],
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 10,
+                      runSpacing: 6,
                       children: [
-                        _chip(Icons.menu_book_rounded,
-                            '$lessons lessons'),
-                        const SizedBox(width: 12),
-                        _chip(Icons.schedule_rounded, '$duration min'),
-                        const SizedBox(width: 12),
-                        _chip(Icons.language_rounded, language),
-                        if (courseScript != null) ...[
-                          const SizedBox(width: 12),
-                          _chip(Icons.check_circle_rounded,
-                              'Script ready',
+                        _Chip(Icons.menu_book_rounded,
+                            '$totalLessons lesson${totalLessons == 1 ? '' : 's'}'),
+                        _Chip(Icons.schedule_rounded,
+                            duration > 0 ? '$duration min' : widget.courseLength),
+                        _Chip(Icons.language_rounded, widget.language),
+                        _Chip(Icons.bar_chart_rounded, widget.difficulty),
+                        if (hasScript)
+                          _Chip(Icons.check_circle_rounded, 'Script ready',
                               color: ArrestoColors.green),
-                        ],
                       ],
                     ),
                   ],
@@ -1662,12 +2101,246 @@ class _StepReview extends StatelessWidget {
             ],
           ),
         ),
+        const SizedBox(height: 16),
+
+        // ── Learning objectives ─────────────────────────────────────────────
+        if (objectives.isNotEmpty) ...[
+          _SectionLabel('Learning Objectives'),
+          const SizedBox(height: 8),
+          ArrestoCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: objectives.asMap().entries.map((e) {
+                return Padding(
+                  padding: EdgeInsets.only(
+                      bottom: e.key < objectives.length - 1 ? 8 : 0),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        width: 20,
+                        height: 20,
+                        margin: const EdgeInsets.only(top: 1, right: 10),
+                        decoration: BoxDecoration(
+                          color: ArrestoColors.amber.withOpacity(0.15),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Center(
+                          child: Text(
+                            '${e.key + 1}',
+                            style: ArrestoText.small(color: ArrestoColors.orange)
+                                .copyWith(fontSize: 10),
+                          ),
+                        ),
+                      ),
+                      Expanded(
+                        child: Text(e.value, style: ArrestoText.small()),
+                      ),
+                    ],
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+          const SizedBox(height: 16),
+        ],
+
+        // ── Module / lesson outline ─────────────────────────────────────────
+        if (modules.isNotEmpty) ...[
+          _SectionLabel('Course Outline'),
+          const SizedBox(height: 8),
+          ...modules.asMap().entries.map((me) {
+            final mi      = me.key;
+            final mod     = me.value as Map<String, dynamic>;
+            final mTitle  = mod['module_title'] as String? ?? 'Module ${mi + 1}';
+            final lessons = (mod['lessons'] as List?) ?? [];
+            final isOpen  = _expandedModules.contains(mi);
+            return Padding(
+              padding: const EdgeInsets.only(bottom: 8),
+              child: ArrestoCard(
+                padding: EdgeInsets.zero,
+                child: Column(
+                  children: [
+                    InkWell(
+                      borderRadius: BorderRadius.circular(15),
+                      onTap: () => setState(() {
+                        if (isOpen) {
+                          _expandedModules.remove(mi);
+                        } else {
+                          _expandedModules.add(mi);
+                        }
+                      }),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 12),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 28,
+                              height: 28,
+                              decoration: BoxDecoration(
+                                color: ArrestoColors.amber.withOpacity(0.12),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Center(
+                                child: Text(
+                                  'M${mi + 1}',
+                                  style: ArrestoText.small(color: ArrestoColors.orange)
+                                      .copyWith(fontSize: 10),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(mTitle,
+                                      style: ArrestoText.body()),
+                                  Text(
+                                      '${lessons.length} lesson${lessons.length == 1 ? '' : 's'}',
+                                      style: ArrestoText.small(
+                                          color: ArrestoColors.textMuted)),
+                                ],
+                              ),
+                            ),
+                            Icon(
+                              isOpen
+                                  ? Icons.keyboard_arrow_up_rounded
+                                  : Icons.keyboard_arrow_down_rounded,
+                              size: 18,
+                              color: ArrestoColors.textMuted,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    if (isOpen)
+                      ...lessons.asMap().entries.map((le) {
+                        final li      = le.key;
+                        final lesson  = le.value as Map<String, dynamic>;
+                        final lTitle  = lesson['lesson_title'] as String? ??
+                            'Lesson ${li + 1}';
+                        final lMin    =
+                            (lesson['duration_minutes'] as num?)?.toInt();
+                        final isLast  = li == lessons.length - 1;
+                        return Container(
+                          decoration: BoxDecoration(
+                            border: Border(
+                              top: BorderSide(
+                                  color: ArrestoColors.line, width: 1),
+                            ),
+                          ),
+                          child: Padding(
+                            padding: EdgeInsets.fromLTRB(
+                                16, 10, 16, isLast ? 12 : 10),
+                            child: Row(
+                              children: [
+                                const SizedBox(width: 38),
+                                Container(
+                                  width: 6,
+                                  height: 6,
+                                  margin: const EdgeInsets.only(right: 10),
+                                  decoration: BoxDecoration(
+                                    color: ArrestoColors.textMuted
+                                        .withOpacity(0.5),
+                                    shape: BoxShape.circle,
+                                  ),
+                                ),
+                                Expanded(
+                                  child: Text(lTitle,
+                                      style: ArrestoText.small()),
+                                ),
+                                if (lMin != null)
+                                  Text('$lMin min',
+                                      style: ArrestoText.small(
+                                          color: ArrestoColors.textMuted)),
+                              ],
+                            ),
+                          ),
+                        );
+                      }),
+                  ],
+                ),
+              ),
+            );
+          }),
+          const SizedBox(height: 16),
+        ],
+
+        // ── Settings summary ────────────────────────────────────────────────
+        _SectionLabel('Generation Settings'),
+        const SizedBox(height: 8),
+        ArrestoCard(
+          child: Column(
+            children: [
+              _SettingRow(
+                icon: _styleIcons[widget.videoStyle] ??
+                    Icons.smart_display_rounded,
+                label: 'Video Style',
+                value: _styleLabels[widget.videoStyle] ?? widget.videoStyle,
+              ),
+              _SettingDivider(),
+              _SettingRow(
+                icon: Icons.record_voice_over_rounded,
+                label: 'Transcript Voice',
+                value:
+                    '${_voiceLabels[widget.transcriptVoice] ?? widget.transcriptVoice}'
+                    ' (${_voiceGenders[widget.transcriptVoice] ?? '—'})',
+              ),
+              _SettingDivider(),
+              _SettingRow(
+                icon: Icons.videocam_rounded,
+                label: 'Video Voice',
+                value:
+                    '${_voiceLabels[widget.videoVoice] ?? widget.videoVoice}'
+                    ' (${_voiceGenders[widget.videoVoice] ?? '—'})',
+              ),
+              _SettingDivider(),
+              _SettingRow(
+                icon: Icons.timer_rounded,
+                label: 'Course Length',
+                value: widget.courseLength.isNotEmpty
+                    ? widget.courseLength
+                    : '—',
+              ),
+              _SettingDivider(),
+              _SettingRow(
+                icon: Icons.people_rounded,
+                label: 'Target Audience',
+                value: widget.audience.isNotEmpty ? widget.audience : '—',
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 8),
       ],
     );
   }
+}
 
-  Widget _chip(IconData icon, String label,
-      {Color color = ArrestoColors.textMuted}) {
+// ── Review sub-widgets ─────────────────────────────────────────────────────────
+
+class _SectionLabel extends StatelessWidget {
+  final String text;
+  const _SectionLabel(this.text);
+
+  @override
+  Widget build(BuildContext context) => Text(
+        text,
+        style: ArrestoText.small(color: ArrestoColors.textMuted),
+      );
+}
+
+class _Chip extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final Color color;
+  const _Chip(this.icon, this.label,
+      {this.color = ArrestoColors.textMuted});
+
+  @override
+  Widget build(BuildContext context) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -1675,6 +2348,69 @@ class _StepReview extends StatelessWidget {
         const SizedBox(width: 4),
         Text(label, style: ArrestoText.small(color: color)),
       ],
+    );
+  }
+}
+
+class _SettingRow extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final String value;
+  const _SettingRow(
+      {required this.icon, required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Icon(icon, size: 16, color: ArrestoColors.textMuted),
+        const SizedBox(width: 10),
+        Text(label, style: ArrestoText.small(color: ArrestoColors.textMuted)),
+        const Spacer(),
+        Text(value, style: ArrestoText.small()),
+      ],
+    );
+  }
+}
+
+class _SettingDivider extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Divider(
+          height: 1, thickness: 1, color: ArrestoColors.line),
+    );
+  }
+}
+
+class _WarningBanner extends StatelessWidget {
+  final IconData icon;
+  final Color color;
+  final String message;
+  const _WarningBanner(
+      {required this.icon, required this.color, required this.message});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withOpacity(0.3)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 18, color: color),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(message,
+                style: ArrestoText.small(color: color)),
+          ),
+        ],
+      ),
     );
   }
 }

@@ -29,6 +29,7 @@ import '../../features/admin/support/admin_support_screen.dart';
 import '../../features/admin/support/ticket_detail_screen.dart';
 import '../../features/admin/settings/settings_screen.dart';
 import '../../features/admin/courses/all_courses_screen.dart';
+import '../../features/admin/video/video_management_screen.dart';
 
 final routerProvider = Provider<GoRouter>((ref) {
   return GoRouter(
@@ -171,6 +172,11 @@ final routerProvider = Provider<GoRouter>((ref) {
           GoRoute(
             path: '/admin/courses',
             pageBuilder: (ctx, state) => _fade(state, const AllCoursesScreen()),
+          ),
+          GoRoute(
+            path: '/admin/video',
+            pageBuilder: (ctx, state) =>
+                _fade(state, const VideoManagementScreen()),
           ),
           GoRoute(
             path: '/admin/settings',

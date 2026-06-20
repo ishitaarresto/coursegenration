@@ -107,6 +107,12 @@ class _AdminSidebar extends StatelessWidget {
                   location: location,
                 ),
                 _NavItem(
+                  icon: Icons.videocam_rounded,
+                  label: 'Video Studio',
+                  route: '/admin/video',
+                  location: location,
+                ),
+                _NavItem(
                   icon: Icons.people_rounded,
                   label: 'Learners',
                   route: '/admin/learners',

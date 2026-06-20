@@ -21,6 +21,7 @@ class CourseService {
     String? courseTitle,
     String targetAudience = 'learners',
     String? instructions,
+    String? userInstructions,
     bool useKnowledgeBase = true,
     String courseFormat = 'standard',
     String language = 'English',
@@ -33,6 +34,8 @@ class CourseService {
       'target_audience': targetAudience,
       if (instructions != null && instructions.isNotEmpty)
         'instructions': instructions,
+      if (userInstructions != null && userInstructions.isNotEmpty)
+        'user_instructions': userInstructions,
       'use_knowledge_base': useKnowledgeBase,
       'course_format': courseFormat,
       'language': language,
@@ -58,6 +61,15 @@ class CourseService {
       if (e.response?.statusCode == 404) return {};
       rethrow;
     }
+  }
+
+  /// Replace the full course_script JSON for a course.
+  /// Used by the script review dialog to persist narration/bullet edits.
+  static Future<void> updateCourseScript(
+      String scriptId, Map<String, dynamic> courseScript) async {
+    await apiClient.patch('/api/v1/courses/library/$scriptId', data: {
+      'course_script': courseScript,
+    });
   }
 
   /// Rename a course. Fetches the existing script body first so the PATCH
