@@ -87,7 +87,8 @@ def _migrate_video_renders() -> None:
     from sqlalchemy import text
 
     new_cols = [
-        ("voice", "TEXT", "''", False),
+        ("scene_index", "INTEGER", "NULL", True),
+        ("voice",       "TEXT",    "''",   False),
     ]
 
     with engine.connect() as conn:

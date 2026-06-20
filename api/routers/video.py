@@ -22,7 +22,11 @@ from pydantic import BaseModel, Field
 from api.config import settings
 from api.course_library import library
 from modules.video.job_store import video_job_store
-from modules.video.render_engine import render_item_in_background, render_lesson_in_background
+from modules.video.render_engine import (
+    count_lesson_scenes,
+    render_item_in_background,
+    render_lesson_in_background,
+)
 
 # Styles that require a HeyGen API key — must match render_engine._HEYGEN_STYLES
 _HEYGEN_STYLES = frozenset({"animated_scene", "whiteboard_doodle", "hybrid"})
@@ -73,21 +77,25 @@ class VideoRenderRequest(BaseModel):
     # Custom (blueprint/micro-course) — provide item_index
     item_index: int | None = Field(None, ge=0, description="0-based index into items[] for custom courses")
 
-    lang:  str = Field("en",      description='BCP-47 language code: "en", "hi", "ta", "te", …')
-    style: str = Field("modern",  description='"modern" | "flatcolor" | "whiteboard"')
-    voice: str = Field("",        description='Sarvam speaker name override: "ritu", "rahul", "kavitha", … (empty = lang default)')
+    lang:        str      = Field("en",  description='BCP-47 language code: "en", "hi", "ta", "te", …')
+    style:       str      = Field("modern", description='"modern" | "flatcolor" | "whiteboard"')
+    voice:       str      = Field("",   description='Sarvam speaker name override: "ritu", "rahul", "kavitha", … (empty = lang default)')
+    scene_index: int | None = Field(None, ge=0, description="Scene index (0-based) within the lesson narration. Omit to render all scenes.")
 
 
 class VideoRenderResponse(BaseModel):
-    render_id: str
-    status:    str
-    message:   str
+    render_id:      str         # first (or only) job render_id
+    render_ids:     list[str]   # all jobs created — one per scene when scene_index omitted
+    status:         str
+    message:        str
+    scenes_created: int = 1
 
 
 class VideoRenderStatus(BaseModel):
     render_id:   str
     script_id:   str
     lesson_ref:  str
+    scene_index: int | None
     lang:        str
     style:       str
     status:      str
@@ -113,6 +121,7 @@ def _job_to_status(job) -> VideoRenderStatus:
         render_id=job.render_id,
         script_id=job.script_id,
         lesson_ref=job.lesson_ref,
+        scene_index=job.scene_index,
         lang=job.lang,
         style=job.style,
         status=job.status,
@@ -217,28 +226,50 @@ async def render_video(
     # TTS picks the right voice.
     resolved_lang = _resolve_lang(request.lang, record)
 
-    # ── Create job + queue background task ──────────────────────────────────────
-    job = video_job_store.create(
-        script_id=request.script_id,
-        lesson_ref=lesson_ref,
-        lang=resolved_lang,
-        style=request.style,
-        voice=request.voice,
-    )
-
+    # ── Create job(s) + queue background tasks ──────────────────────────────────
     if request.item_index is not None:
+        # Custom course: always a single item, no scene splitting
+        job = video_job_store.create(
+            script_id=request.script_id,
+            lesson_ref=lesson_ref,
+            lang=resolved_lang,
+            style=request.style,
+            voice=request.voice,
+        )
         background_tasks.add_task(render_item_in_background, job, lesson_data)
+        created_jobs = [job]
     else:
-        background_tasks.add_task(render_lesson_in_background, job, lesson_data)
+        # Standard lesson: create one job per scene (or one job for a specific scene)
+        if request.scene_index is not None:
+            scene_indices = [request.scene_index]
+        else:
+            n_scenes = count_lesson_scenes(lesson_data)
+            scene_indices = list(range(n_scenes))
 
+        created_jobs = []
+        for si in scene_indices:
+            job = video_job_store.create(
+                script_id=request.script_id,
+                lesson_ref=lesson_ref,
+                lang=resolved_lang,
+                style=request.style,
+                voice=request.voice,
+                scene_index=si,
+            )
+            background_tasks.add_task(render_lesson_in_background, job, lesson_data)
+            created_jobs.append(job)
+
+    first_id = created_jobs[0].render_id
     return VideoRenderResponse(
-        render_id=job.render_id,
+        render_id=first_id,
+        render_ids=[j.render_id for j in created_jobs],
         status="processing",
         message=(
-            f"Video render started for '{lesson_ref}' "
-            f"(lang={request.lang}, style={request.style}). "
-            f"Poll /api/v1/video/renders/{job.render_id} to track progress."
+            f"Started {len(created_jobs)} scene job(s) for '{lesson_ref}' "
+            f"(lang={resolved_lang}, style={request.style}). "
+            f"Poll /api/v1/video/renders/{first_id} to track progress."
         ),
+        scenes_created=len(created_jobs),
     )
 
 
@@ -278,10 +309,11 @@ async def generate_all_videos(
     # the default 'en' but the course was generated in Hindi/Tamil/etc.
     lang = _resolve_lang(lang, record)
 
-    # Skip lessons that already have a completed or in-progress render for this lang.
+    # Skip scenes that already have a completed or in-progress render for this lang.
     # Failed renders are NOT skipped so re-calling generate-all re-tries them.
-    active_refs = {
-        j.lesson_ref
+    # Key: (lesson_ref, scene_index) — scene_index may be None for old item-level jobs.
+    active_scene_pairs = {
+        (j.lesson_ref, j.scene_index)
         for j in video_job_store.list_for_script(script_id)
         if j.status in ("completed", "pending", "processing") and j.lang == lang
     }
@@ -304,38 +336,43 @@ async def generate_all_videos(
 
     modules = course.get("modules", [])
     if modules:
-        # Standard course — one job per lesson
+        # Standard course — one job per scene per lesson
         job_index = 0
         for mod in modules:
             m_num = int(mod.get("module_number", 1))
             for les in mod.get("lessons", []):
                 l_num = int(les.get("lesson_number", 1))
                 lesson_ref = f"module_{m_num}_lesson_{l_num}"
-                if lesson_ref in active_refs:
-                    jobs_skipped.append(lesson_ref)
-                    continue
-                job = video_job_store.create(
-                    script_id=script_id,
-                    lesson_ref=lesson_ref,
-                    lang=lang,
-                    style=style,
-                    voice=voice,
-                )
-                background_tasks.add_task(
-                    _staggered_lesson, job, les, job_index * _heygen_stagger
-                )
-                jobs_created.append(
-                    {"render_id": job.render_id, "lesson_ref": lesson_ref}
-                )
-                job_index += 1
+                n_scenes = count_lesson_scenes(les)
+                for scene_idx in range(n_scenes):
+                    if (lesson_ref, scene_idx) in active_scene_pairs:
+                        jobs_skipped.append(f"{lesson_ref}_scene_{scene_idx}")
+                        continue
+                    job = video_job_store.create(
+                        script_id=script_id,
+                        lesson_ref=lesson_ref,
+                        lang=lang,
+                        style=style,
+                        voice=voice,
+                        scene_index=scene_idx,
+                    )
+                    background_tasks.add_task(
+                        _staggered_lesson, job, les, job_index * _heygen_stagger
+                    )
+                    jobs_created.append({
+                        "render_id": job.render_id,
+                        "lesson_ref": lesson_ref,
+                        "scene_index": scene_idx,
+                    })
+                    job_index += 1
     else:
-        # Custom / blueprint course — one job per renderable item
+        # Custom / blueprint course — one job per renderable item (already scene-level)
         job_index = 0
         for i, item in enumerate(course.get("items", [])):
             if item.get("type") not in ("slide", "closing_slide"):
                 continue
             lesson_ref = f"item_{i}"
-            if lesson_ref in active_refs:
+            if (lesson_ref, None) in active_scene_pairs:
                 jobs_skipped.append(lesson_ref)
                 continue
             job = video_job_store.create(
@@ -461,7 +498,8 @@ def download_video(render_id: str):
     if not job.video_path or not Path(job.video_path).exists():
         raise HTTPException(500, "Video file not found on disk.")
 
-    filename = f"{job.lesson_ref}_{job.lang}.mp4"
+    scene_suffix = f"_scene{job.scene_index}" if job.scene_index is not None else ""
+    filename = f"{job.lesson_ref}{scene_suffix}_{job.lang}.mp4"
     return FileResponse(
         path=job.video_path,
         media_type="video/mp4",
@@ -478,6 +516,16 @@ def list_script_renders(script_id: str):
         "renders":   [_job_to_status(j) for j in jobs],
         "total":     len(jobs),
     }
+
+
+@router.get("/heygen-credits")
+def heygen_credits():
+    """Return remaining HeyGen credits (null if not configured)."""
+    from modules.video.generators.heygen_render import remaining_credits, is_configured
+    if not is_configured():
+        return {"configured": False, "remaining": None}
+    bal = remaining_credits()
+    return {"configured": True, "remaining": bal}
 
 
 @router.get("/languages")

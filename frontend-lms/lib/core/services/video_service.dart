@@ -4,6 +4,7 @@ class VideoRenderJob {
   final String renderId;
   final String scriptId;
   final String lessonRef;
+  final int? sceneIndex;
   final String lang;
   final String style;
   final String status;     // pending | processing | completed | failed
@@ -18,6 +19,7 @@ class VideoRenderJob {
     required this.renderId,
     required this.scriptId,
     required this.lessonRef,
+    this.sceneIndex,
     required this.lang,
     required this.style,
     required this.status,
@@ -33,6 +35,7 @@ class VideoRenderJob {
         renderId:   j['render_id'] as String,
         scriptId:   j['script_id'] as String,
         lessonRef:  j['lesson_ref'] as String,
+        sceneIndex: j['scene_index'] as int?,
         lang:       j['lang'] as String? ?? 'en',
         style:      j['style'] as String? ?? 'animated_scene',
         status:     j['status'] as String,
@@ -63,12 +66,14 @@ class VideoService {
     return (resp.data['jobs_started'] as num).toInt();
   }
 
-  /// Trigger a single lesson render with optional voice/style overrides.
-  static Future<VideoRenderJob> renderLesson(
+  /// Trigger render for a lesson (or a single scene within it).
+  /// Returns the number of scene jobs started.
+  static Future<int> renderLesson(
     String scriptId, {
     int? moduleNumber,
     int? lessonNumber,
     int? itemIndex,
+    int? sceneIndex,
     String lang = 'en',
     String style = 'modern',
     String voice = '',
@@ -78,22 +83,12 @@ class VideoService {
       if (moduleNumber != null) 'module_number': moduleNumber,
       if (lessonNumber != null) 'lesson_number': lessonNumber,
       if (itemIndex != null) 'item_index': itemIndex,
+      if (sceneIndex != null) 'scene_index': sceneIndex,
       'lang': lang,
       'style': style,
       'voice': voice,
     });
-    return VideoRenderJob(
-      renderId:   resp.data['render_id'] as String,
-      scriptId:   scriptId,
-      lessonRef:  '',
-      lang:       lang,
-      style:      style,
-      status:     resp.data['status'] as String,
-      ttsEngine:  '',
-      voice:      voice,
-      videoReady: false,
-      startedAt:  0,
-    );
+    return (resp.data['scenes_created'] as num?)?.toInt() ?? 1;
   }
 
   /// List all render jobs for a course.

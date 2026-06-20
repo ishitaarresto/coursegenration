@@ -268,6 +268,7 @@ class _AllCoursesScreenState extends ConsumerState<AllCoursesScreen> {
                 onView: () => _view(ctx, filtered[i]),
                 onEdit: () => _showEditSheet(ctx, filtered[i]),
                 onGenerateVideo: () => _generateVideos(ctx, filtered[i]),
+                onDelete: () => _confirmDelete(ctx, filtered[i]),
               ),
             ),
           )
@@ -333,12 +334,14 @@ class _AdminCourseCard extends StatelessWidget {
   final VoidCallback onView;
   final VoidCallback onEdit;
   final VoidCallback onGenerateVideo;
+  final VoidCallback onDelete;
 
   const _AdminCourseCard({
     required this.course,
     required this.onView,
     required this.onEdit,
     required this.onGenerateVideo,
+    required this.onDelete,
   });
 
   @override
@@ -406,16 +409,31 @@ class _AdminCourseCard extends StatelessWidget {
                     ),
                   ]),
                   const SizedBox(height: 8),
-                  SizedBox(
-                    width: double.infinity,
-                    child: ArrestoButton(
-                      label: 'Generate Videos',
-                      size: ArrestoButtonSize.sm,
-                      variant: ArrestoButtonVariant.ghost,
-                      icon: const Icon(Icons.video_library_rounded),
-                      onPressed: onGenerateVideo,
+                  Row(children: [
+                    Expanded(
+                      child: ArrestoButton(
+                        label: 'Generate Videos',
+                        size: ArrestoButtonSize.sm,
+                        variant: ArrestoButtonVariant.ghost,
+                        icon: const Icon(Icons.video_library_rounded),
+                        onPressed: onGenerateVideo,
+                      ),
                     ),
-                  ),
+                    const SizedBox(width: 8),
+                    IconButton(
+                      onPressed: onDelete,
+                      icon: const Icon(Icons.delete_outline_rounded,
+                          color: ArrestoColors.red, size: 20),
+                      tooltip: 'Delete course',
+                      style: IconButton.styleFrom(
+                        backgroundColor:
+                            ArrestoColors.red.withValues(alpha: 0.08),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8)),
+                        padding: const EdgeInsets.all(8),
+                      ),
+                    ),
+                  ]),
                 ],
               ),
             ),

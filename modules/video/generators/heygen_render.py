@@ -283,6 +283,19 @@ def generate_heygen_video(
     avatar_id      = _pick_avatar(voice_preference)
     voice_id       = _pick_voice(lang, voice_preference)
 
+    # Pre-flight credit check — 10 credits/min; Hindi ~100 wpm, English ~130 wpm
+    word_count   = len(narration.split())
+    wpm          = 100 if lang.startswith("hi") else 130
+    est_minutes  = word_count / wpm
+    est_credits  = int(est_minutes * 10) + 5   # +5 safety margin
+    bal          = remaining_credits()
+    if bal is not None and bal < est_credits:
+        raise HeyGenError(
+            f"Insufficient HeyGen credits: {bal} remaining, "
+            f"~{est_credits} needed for {word_count}-word scene (~{est_minutes:.1f} min). "
+            "Top up at app.heygen.com → Billing."
+        )
+
     video_id = _submit(avatar_id, voice_id, segments)
     url      = _poll(video_id)
     return _download(url, out_path)

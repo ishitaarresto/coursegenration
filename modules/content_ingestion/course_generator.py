@@ -225,13 +225,46 @@ class CourseGenerator:
                 "  - 7 to 10 minutes per lesson (duration_minutes between 7 and 10)"
             )
 
-    def _enforce_duration(self, outline: dict, duration_range: str) -> dict:
+    @staticmethod
+    def _parse_structure_overrides(user_instructions: str | None) -> tuple[int | None, int | None]:
         """
-        Programmatically clamps the outline to the user-selected duration band.
-        Claude does not reliably obey numeric constraints in prompts — this
-        enforces them deterministically after the outline is generated.
+        Extract explicit module / lesson counts from free-form user instructions.
+        Returns (module_count, lessons_per_module) — either may be None if not found.
+        Examples matched: "5 modules", "3 lessons per module", "generate 4 modules with 5 lessons"
+        """
+        if not user_instructions:
+            return None, None
+        mod_m = re.search(r'\b(\d+)\s+module', user_instructions, re.IGNORECASE)
+        les_m = re.search(r'\b(\d+)\s+lesson', user_instructions, re.IGNORECASE)
+        mod_count = int(mod_m.group(1)) if mod_m else None
+        les_count = int(les_m.group(1)) if les_m else None
+        return mod_count, les_count
+
+    def _enforce_duration(
+        self,
+        outline: dict,
+        duration_range: str,
+        user_instructions: str | None = None,
+    ) -> dict:
+        """
+        Clamps the outline to the selected duration band.
+
+        If the admin explicitly specified a module or lesson count in
+        user_instructions, those override the duration-band defaults —
+        the admin's structural intent takes priority. Per-lesson duration
+        limits are always enforced to keep individual lessons sane.
         """
         max_total, max_mods, max_les, min_les_min, max_les_min = self._duration_limits(duration_range)
+
+        # Admin-specified structure overrides duration-band caps
+        user_mod_count, user_les_count = self._parse_structure_overrides(user_instructions)
+        if user_mod_count is not None:
+            logger.info("User specified %d modules — overriding duration-band cap of %d.", user_mod_count, max_mods)
+            max_mods = user_mod_count
+            max_total = max_total * max_mods // max(1, self._duration_limits(duration_range)[1])
+        if user_les_count is not None:
+            logger.info("User specified %d lessons/module — overriding duration-band cap of %d.", user_les_count, max_les)
+            max_les = user_les_count
 
         outline["modules"] = outline["modules"][:max_mods]
 
@@ -255,8 +288,8 @@ class CourseGenerator:
         final_total = sum(les["duration_minutes"] for mod in outline["modules"] for les in mod["lessons"])
         final_lessons = sum(len(mod["lessons"]) for mod in outline["modules"])
         logger.info(
-            "Duration enforced for '%s': %d lessons, %d min total",
-            duration_range, final_lessons, final_total,
+            "Duration enforced for '%s': %d modules, %d lessons, %d min total",
+            duration_range, len(outline["modules"]), final_lessons, final_total,
         )
         return outline
 
@@ -489,10 +522,10 @@ class CourseGenerator:
         # Step 2 — outline (with duration constraints baked into the prompt)
         logger.info("Step 2/3: Building course outline ...")
         title = course_title or analysis.get("suggested_title", source_file)
-        outline = self._outline(analysis, title, target_audience, parsed, language, duration_range, user_req)
+        outline = self._outline(analysis, title, target_audience, parsed, language, duration_range, user_req, user_instructions)
 
-        # Hard-clamp the outline regardless of what Claude returned
-        outline = self._enforce_duration(outline, duration_range)
+        # Clamp outline — user_instructions can override module/lesson counts
+        outline = self._enforce_duration(outline, duration_range, user_instructions)
 
         total_lessons = sum(len(m["lessons"]) for m in outline["modules"])
         logger.info("Step 3/3: Scripting %d lessons ...", total_lessons)
@@ -564,14 +597,25 @@ Return ONLY the JSON, no other text.
         analysis:       dict,
         course_title:   str,
         audience:       str,
-        parsed:         dict,
-        language:       str  = "English",
-        duration_range: str  = "60-90 minutes",
-        user_req:       str  = "",
+        parsed:            dict,
+        language:          str  = "English",
+        duration_range:    str  = "60-90 minutes",
+        user_req:          str  = "",
+        user_instructions: str | None = None,
     ) -> dict:
         _, _, _, min_les_min, max_les_min = self._duration_limits(duration_range)
         example_dur = (min_les_min + max_les_min) // 2
         duration_rules = self._duration_prompt_rules(duration_range)
+
+        # If admin explicitly specified structure, add it to the prompt so Claude generates the right count
+        user_mod_count, user_les_count = self._parse_structure_overrides(user_instructions)
+        if user_mod_count is not None or user_les_count is not None:
+            overrides = []
+            if user_mod_count is not None:
+                overrides.append(f"  - EXACTLY {user_mod_count} modules (admin requirement — do not reduce)")
+            if user_les_count is not None:
+                overrides.append(f"  - EXACTLY {user_les_count} lessons per module (admin requirement — do not reduce)")
+            duration_rules += "\nADMIN STRUCTURE OVERRIDE (takes priority over duration band):\n" + "\n".join(overrides)
 
         objectives_line = f"LEARNING OBJECTIVES TO COVER: {parsed['objectives']}" if parsed.get("objectives") else ""
         difficulty_line = f"DIFFICULTY LEVEL: {parsed.get('difficulty', analysis.get('difficulty_level', 'intermediate'))}"

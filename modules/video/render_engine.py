@@ -21,11 +21,72 @@ English, etc.) — no auto-translation is performed.
 from __future__ import annotations
 
 import asyncio
+import re
 import time
 from pathlib import Path
 
 from modules.video import schemas
 from modules.video.job_store import VideoRenderJob, video_job_store
+
+# ── Scene splitting ───────────────────────────────────────────────────────────
+
+_SCENE_TARGET_WORDS = 150
+
+
+def _split_into_scenes(narration: str) -> list[str]:
+    """Split a long narration into ≤_SCENE_TARGET_WORDS-word scenes.
+
+    Splits first at paragraph boundaries (\\n\\n), then at sentence boundaries
+    (। . ! ?) for paragraphs that are themselves too long (common with
+    AI-generated scripts that produce one big paragraph).
+    """
+    paragraphs = [p.strip() for p in narration.strip().split('\n\n') if p.strip()]
+    if not paragraphs:
+        return [narration.strip() or '']
+
+    # Break oversized paragraphs into sentence-level units first
+    units: list[str] = []
+    for para in paragraphs:
+        if len(para.split()) <= _SCENE_TARGET_WORDS:
+            units.append(para)
+        else:
+            sentences = re.split(r'(?<=[।.!?])\s+', para.strip())
+            current_sents: list[str] = []
+            current_count = 0
+            for sent in sentences:
+                wc = len(sent.split())
+                if current_count > 0 and current_count + wc > _SCENE_TARGET_WORDS:
+                    units.append(' '.join(current_sents))
+                    current_sents, current_count = [sent], wc
+                else:
+                    current_sents.append(sent)
+                    current_count += wc
+            if current_sents:
+                units.append(' '.join(current_sents))
+
+    # Group units into scenes
+    scenes: list[str] = []
+    current_parts: list[str] = []
+    current_count = 0
+    for unit in units:
+        wc = len(unit.split())
+        if current_count > 0 and current_count + wc > _SCENE_TARGET_WORDS:
+            scenes.append('\n\n'.join(current_parts))
+            current_parts, current_count = [unit], wc
+        else:
+            current_parts.append(unit)
+            current_count += wc
+    if current_parts:
+        scenes.append('\n\n'.join(current_parts))
+
+    return scenes or [narration]
+
+
+split_into_scenes = _split_into_scenes
+
+
+def count_lesson_scenes(lesson: dict) -> int:
+    return len(_split_into_scenes(lesson.get('narration_script', '')))
 
 
 # ── Adapters: LMS dict → LessonContent + SlideSpec ───────────────────────────
@@ -187,8 +248,14 @@ def render_lesson(
     job: VideoRenderJob,
     lesson: dict,
 ) -> None:
-    """Render a lesson from a standard (module/lesson) course script."""
+    """Render a lesson (or one scene of it) from a standard (module/lesson) course script."""
     title, narration, lc, slides = _standard_lesson_to_content(lesson)
+    if job.scene_index is not None:
+        scenes = _split_into_scenes(narration)
+        if 0 <= job.scene_index < len(scenes):
+            narration = scenes[job.scene_index]
+            lc.narration_script = narration
+        title = f"{title} — Part {job.scene_index + 1}"
     _do_render(job, title, narration, lc, slides)
 
 

@@ -29,6 +29,7 @@ class VideoRenderJob:
     finished_at: float | None = None
     tts_engine:  str = ""
     voice:       str = ""
+    scene_index: int | None = None
 
 
 class VideoJobStore:
@@ -79,6 +80,7 @@ class VideoJobStore:
                     db.add(row)
                 row.script_id   = job.script_id
                 row.lesson_ref  = job.lesson_ref
+                row.scene_index = job.scene_index
                 row.lang        = job.lang
                 row.style       = job.style
                 row.status      = job.status
@@ -94,7 +96,7 @@ class VideoJobStore:
 
     # -- Public API ------------------------------------------------------------
 
-    def create(self, script_id: str, lesson_ref: str, lang: str, style: str, voice: str = "") -> VideoRenderJob:
+    def create(self, script_id: str, lesson_ref: str, lang: str, style: str, voice: str = "", scene_index: int | None = None) -> VideoRenderJob:
         job = VideoRenderJob(
             render_id=str(uuid.uuid4()),
             script_id=script_id,
@@ -102,6 +104,7 @@ class VideoJobStore:
             lang=lang,
             style=style,
             voice=voice,
+            scene_index=scene_index,
         )
         self._jobs[job.render_id] = job
         self._upsert(job)
@@ -127,6 +130,7 @@ class VideoJobStore:
             render_id=row.render_id,
             script_id=row.script_id,
             lesson_ref=row.lesson_ref,
+            scene_index=row.scene_index,
             lang=row.lang,
             style=row.style,
             status=row.status,

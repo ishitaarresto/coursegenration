@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' show max;
 
 import 'package:flutter/material.dart';
 import '../../../core/services/course_service.dart';
@@ -173,21 +174,27 @@ class _VideoManagementScreenState extends State<VideoManagementScreen> {
     int? moduleNumber,
     int? lessonNumber,
     int? itemIndex,
+    int? sceneIndex,
     String lang = 'en',
   }) async {
     final style = _courseStyle[scriptId] ?? 'modern';
     final voice = _courseVoice[scriptId] ?? 'ritu';
     try {
-      await VideoService.renderLesson(
+      final count = await VideoService.renderLesson(
         scriptId,
         moduleNumber: moduleNumber,
         lessonNumber: lessonNumber,
         itemIndex: itemIndex,
+        sceneIndex: sceneIndex,
         lang: lang,
         style: style,
         voice: voice,
       );
       if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Started $count scene job(s)'),
+        backgroundColor: ArrestoColors.ink,
+      ));
       await _loadCourseDetail(scriptId);
     } catch (e) {
       if (!mounted) return;
@@ -365,6 +372,7 @@ class _VideoManagementScreenState extends State<VideoManagementScreen> {
           int? moduleNumber,
           int? lessonNumber,
           int? itemIndex,
+          int? sceneIndex,
           String lang = 'en',
         }) =>
             _renderLesson(
@@ -372,6 +380,7 @@ class _VideoManagementScreenState extends State<VideoManagementScreen> {
               moduleNumber: moduleNumber,
               lessonNumber: lessonNumber,
               itemIndex: itemIndex,
+              sceneIndex: sceneIndex,
               lang: lang,
             ),
         onReviewLesson: ({
@@ -410,7 +419,7 @@ class _CourseCard extends StatelessWidget {
   final ValueChanged<String> onStyleChanged;
   final ValueChanged<String> onVoiceChanged;
   final VoidCallback onRenderAll;
-  final Function({int? moduleNumber, int? lessonNumber, int? itemIndex, String lang}) onRenderLesson;
+  final Function({int? moduleNumber, int? lessonNumber, int? itemIndex, int? sceneIndex, String lang}) onRenderLesson;
   final Function({
     required String lessonTitle,
     required String lessonRef,
@@ -436,12 +445,18 @@ class _CourseCard extends StatelessWidget {
     required this.onReviewLesson,
   });
 
-  VideoRenderJob? _jobForLesson(String lessonRef) {
-    final jobs = renders
-        .where((j) => j.lessonRef == lessonRef)
-        .toList()
-      ..sort((a, b) => b.startedAt.compareTo(a.startedAt));
-    return jobs.isEmpty ? null : jobs.first;
+  /// Returns newest job per scene_index for this lessonRef.
+  /// Key = scene_index (null → 0 for legacy jobs without scene_index).
+  Map<int, VideoRenderJob> _jobsForLesson(String lessonRef) {
+    final result = <int, VideoRenderJob>{};
+    for (final j in renders.where((j) => j.lessonRef == lessonRef)) {
+      final si = j.sceneIndex ?? 0;
+      final existing = result[si];
+      if (existing == null || j.startedAt > existing.startedAt) {
+        result[si] = j;
+      }
+    }
+    return result;
   }
 
   @override
@@ -846,12 +861,16 @@ class _CourseCard extends StatelessWidget {
 
     return Column(
       children: slideItems.map((e) {
-        final title = (e.value as Map<String, dynamic>)['title'] as String? ??
-            'Slide ${e.key + 1}';
+        final item = e.value as Map<String, dynamic>;
+        final title = item['title'] as String? ?? 'Slide ${e.key + 1}';
+        final narration = item['narration'] as String? ?? '';
         final lessonRef = 'item_${e.key}';
         return _buildLessonRow(
           title: title,
           lessonRef: lessonRef,
+          narration: narration,
+          moduleNumber: null,
+          lessonNumber: null,
           onReview: () => onReviewLesson(
             lessonTitle: title,
             lessonRef: lessonRef,
@@ -879,12 +898,15 @@ class _CourseCard extends StatelessWidget {
         ),
         ...lessons.map((les) {
           final lNum = les['lesson_number'] as int? ?? 1;
-          final lTitle =
-              les['lesson_title'] as String? ?? 'Lesson $lNum';
+          final lTitle = les['lesson_title'] as String? ?? 'Lesson $lNum';
           final lessonRef = 'module_${mNum}_lesson_$lNum';
+          final narration = les['narration_script'] as String? ?? '';
           return _buildLessonRow(
             title: lTitle,
             lessonRef: lessonRef,
+            narration: narration,
+            moduleNumber: mNum,
+            lessonNumber: lNum,
             onReview: () => onReviewLesson(
               lessonTitle: lTitle,
               lessonRef: lessonRef,
@@ -897,79 +919,303 @@ class _CourseCard extends StatelessWidget {
     );
   }
 
+  /// Split narration into scenes at paragraph/sentence boundaries (≤150 words each).
+  /// Handles AI-generated narrations that are one long paragraph with no \\n\\n.
+  List<String> _splitIntoScenes(String narration, {int targetWords = 150}) {
+    final paragraphs = narration
+        .trim()
+        .split('\n\n')
+        .map((p) => p.trim())
+        .where((p) => p.isNotEmpty)
+        .toList();
+    if (paragraphs.isEmpty) return [narration.trim().isEmpty ? '' : narration.trim()];
+
+    // Break oversized paragraphs into sentence-level units
+    final units = <String>[];
+    for (final para in paragraphs) {
+      final wc = para.split(RegExp(r'\s+')).length;
+      if (wc <= targetWords) {
+        units.add(para);
+      } else {
+        // Split on sentence endings: "। " for Hindi, ". ", "! ", "? " for English
+        final sentences = para.trim().split(RegExp(r'(?<=[।.!?])\s+'));
+        var currentSents = <String>[];
+        var currentCount = 0;
+        for (final sent in sentences) {
+          final swc = sent.split(RegExp(r'\s+')).length;
+          if (currentCount > 0 && currentCount + swc > targetWords) {
+            units.add(currentSents.join(' '));
+            currentSents = [sent];
+            currentCount = swc;
+          } else {
+            currentSents.add(sent);
+            currentCount += swc;
+          }
+        }
+        if (currentSents.isNotEmpty) units.add(currentSents.join(' '));
+      }
+    }
+
+    // Group units into scenes
+    final scenes = <String>[];
+    var currentParts = <String>[];
+    var currentCount = 0;
+    for (final unit in units) {
+      final wc = unit.split(RegExp(r'\s+')).length;
+      if (currentCount > 0 && currentCount + wc > targetWords) {
+        scenes.add(currentParts.join('\n\n'));
+        currentParts = [unit];
+        currentCount = wc;
+      } else {
+        currentParts.add(unit);
+        currentCount += wc;
+      }
+    }
+    if (currentParts.isNotEmpty) scenes.add(currentParts.join('\n\n'));
+    return scenes.isEmpty ? [narration] : scenes;
+  }
+
   Widget _buildLessonRow({
     required String title,
     required String lessonRef,
+    required String narration,
+    required int? moduleNumber,
+    required int? lessonNumber,
     required VoidCallback onReview,
   }) {
-    final job = _jobForLesson(lessonRef);
-    final status = job?.status;
-    final isActive = status == 'processing' || status == 'pending';
+    final scenesFromSplit = _splitIntoScenes(narration);
+    final sceneJobs = _jobsForLesson(lessonRef);
+
+    // Total scenes = max of what the splitter says vs the highest job scene_index seen.
+    // Jobs are ground truth once rendering has started; splitter is used before any jobs exist.
+    final maxJobSceneIndex =
+        sceneJobs.isEmpty ? 0 : sceneJobs.keys.reduce((a, b) => a > b ? a : b) + 1;
+    final totalScenes = max(scenesFromSplit.length, maxJobSceneIndex);
+
+    final completedScenes =
+        sceneJobs.values.where((j) => j.status == 'completed').length;
+    final activeScenes = sceneJobs.values
+        .where((j) => j.status == 'pending' || j.status == 'processing')
+        .length;
+
+    String headerStatus;
+    String headerStatusColor = 'muted';
+    if (completedScenes == totalScenes && totalScenes > 0) {
+      headerStatus = '$completedScenes/$totalScenes scenes ready';
+      headerStatusColor = 'green';
+    } else if (activeScenes > 0) {
+      headerStatus = '$activeScenes rendering… · $completedScenes/$totalScenes done';
+      headerStatusColor = 'orange';
+    } else if (completedScenes > 0) {
+      headerStatus = '$completedScenes/$totalScenes scenes ready';
+      headerStatusColor = 'green';
+    } else {
+      headerStatus = '$totalScenes scene${totalScenes == 1 ? '' : 's'} · not rendered';
+    }
+
+    final headerDotStatus = completedScenes == totalScenes && totalScenes > 0
+        ? 'completed'
+        : activeScenes > 0
+            ? 'processing'
+            : sceneJobs.values.any((j) => j.status == 'failed')
+                ? 'failed'
+                : null;
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 6),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
         color: ArrestoColors.surfaceSoft,
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: ArrestoColors.line),
       ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Lesson header
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+            child: Row(
+              children: [
+                _StatusDot(status: headerDotStatus),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(title,
+                          style: ArrestoText.bodySm(),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis),
+                      Text(
+                        headerStatus,
+                        style: ArrestoText.xs(
+                          color: headerStatusColor == 'green'
+                              ? ArrestoColors.green
+                              : headerStatusColor == 'orange'
+                                  ? ArrestoColors.orange
+                                  : ArrestoColors.textMuted2,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                GestureDetector(
+                  onTap: onReview,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: ArrestoColors.orangeTint,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                          color: ArrestoColors.orange.withValues(alpha: 0.35)),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.preview_rounded,
+                            size: 13, color: ArrestoColors.orange),
+                        const SizedBox(width: 4),
+                        const Text('Review',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: ArrestoColors.orange,
+                            )),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          // Scene rows — always show one row per scene
+          Container(
+            decoration: const BoxDecoration(
+              border: Border(top: BorderSide(color: ArrestoColors.line)),
+            ),
+            child: Column(
+              children: List.generate(totalScenes, (i) {
+                final job = sceneJobs[i];
+                final wordCount = i < scenesFromSplit.length
+                    ? scenesFromSplit[i]
+                        .split(RegExp(r'\s+'))
+                        .where((w) => w.isNotEmpty)
+                        .length
+                    : 0;
+                return _buildSceneRow(
+                  sceneIndex: i,
+                  totalScenes: totalScenes,
+                  wordCount: wordCount,
+                  job: job,
+                  isLast: i == totalScenes - 1,
+                  onRender: () => onRenderLesson(
+                    moduleNumber: moduleNumber,
+                    lessonNumber: lessonNumber,
+                    sceneIndex: i,
+                  ),
+                );
+              }),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSceneRow({
+    required int sceneIndex,
+    required int totalScenes,
+    required int wordCount,
+    required VideoRenderJob? job,
+    required VoidCallback onRender,
+    bool isLast = false,
+  }) {
+    final status = job?.status;
+    final isActive = status == 'pending' || status == 'processing';
+    final label = totalScenes == 1
+        ? 'Full narration'
+        : 'Scene ${sceneIndex + 1} of $totalScenes';
+    final approxMin = (wordCount / 140).ceil(); // ~140 words/min narration
+
+    return Container(
+      decoration: BoxDecoration(
+        border: isLast
+            ? null
+            : const Border(bottom: BorderSide(color: ArrestoColors.line)),
+      ),
+      padding: const EdgeInsets.fromLTRB(28, 8, 12, 8),
       child: Row(
         children: [
           _StatusDot(status: status),
-          const SizedBox(width: 10),
+          const SizedBox(width: 8),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title,
-                    style: ArrestoText.bodySm(),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis),
-                if (job != null)
-                  Text(_statusLabel(job),
-                      style: ArrestoText.xs(
-                          color: _statusColor(job.status))),
+                Text(label,
+                    style: ArrestoText.xs()
+                        .copyWith(fontWeight: FontWeight.w600)),
+                Text(
+                  '~$wordCount words · ~$approxMin min'
+                  '${job != null ? ' · ${_statusLabel(job)}' : ''}',
+                  style: ArrestoText.xs(
+                    color: job != null
+                        ? _statusColor(job.status)
+                        : ArrestoColors.textMuted2,
+                  ),
+                ),
               ],
             ),
           ),
           const SizedBox(width: 8),
           if (isActive)
             const SizedBox(
-              width: 18,
-              height: 18,
+              width: 16,
+              height: 16,
               child: CircularProgressIndicator(
-                strokeWidth: 2,
+                strokeWidth: 1.8,
                 color: ArrestoColors.orange,
               ),
             )
           else
             GestureDetector(
-              onTap: onReview,
+              onTap: onRender,
               child: Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 10, vertical: 5),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
                 decoration: BoxDecoration(
-                  color: ArrestoColors.orangeTint,
-                  borderRadius: BorderRadius.circular(8),
+                  color: status == 'completed'
+                      ? ArrestoColors.green.withValues(alpha: 0.08)
+                      : ArrestoColors.ink.withValues(alpha: 0.06),
+                  borderRadius: BorderRadius.circular(7),
                   border: Border.all(
-                      color: ArrestoColors.orange.withValues(alpha: 0.35)),
+                    color: status == 'completed'
+                        ? ArrestoColors.green.withValues(alpha: 0.3)
+                        : ArrestoColors.lineStrong,
+                  ),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(
-                      Icons.preview_rounded,
+                      status == 'completed'
+                          ? Icons.refresh_rounded
+                          : Icons.play_arrow_rounded,
                       size: 13,
-                      color: ArrestoColors.orange,
+                      color: status == 'completed'
+                          ? ArrestoColors.green
+                          : ArrestoColors.textSecondary,
                     ),
-                    const SizedBox(width: 4),
+                    const SizedBox(width: 3),
                     Text(
-                      'Review',
+                      status == 'completed' ? 'Re-render' : 'Render',
                       style: TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.w700,
-                        color: ArrestoColors.orange,
+                        color: status == 'completed'
+                            ? ArrestoColors.green
+                            : ArrestoColors.textSecondary,
                       ),
                     ),
                   ],
@@ -983,7 +1229,8 @@ class _CourseCard extends StatelessWidget {
 
   String _statusLabel(VideoRenderJob job) {
     return switch (job.status) {
-      'completed' => 'Ready · ${job.ttsEngine.isNotEmpty ? job.ttsEngine : 'TTS'}${job.voice.isNotEmpty ? " · ${job.voice}" : ""}',
+      'completed' =>
+        'Ready · ${job.ttsEngine.isNotEmpty ? job.ttsEngine : 'TTS'}${job.voice.isNotEmpty ? " · ${job.voice}" : ""}',
       'processing' => 'Rendering…',
       'pending' => 'Queued',
       'failed' => 'Failed: ${job.error ?? "unknown error"}',
