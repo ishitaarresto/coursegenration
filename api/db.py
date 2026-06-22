@@ -2,8 +2,8 @@
 api/db.py -- SQLAlchemy database setup.
 
 Supports two databases transparently:
-  - SQLite   (default, zero-install) — set DATABASE_URL=sqlite:///./lms.db or omit it
-  - PostgreSQL (production-ready)    — set DATABASE_URL=postgresql://user:pass@host/db
+  - PostgreSQL (default)  — set DATABASE_URL=postgresql://user:pass@host/db
+  - SQLite    (dev only)  — set DATABASE_URL=sqlite:///./lms.db
 
 Usage
 -----
@@ -30,7 +30,7 @@ from sqlalchemy import create_engine, event
 from sqlalchemy.orm import DeclarativeBase, sessionmaker, Session
 
 load_dotenv()
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./lms.db")
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/arresto_lms")
 
 _is_postgres = DATABASE_URL.startswith(("postgresql://", "postgres://"))
 

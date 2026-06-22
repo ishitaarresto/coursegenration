@@ -81,27 +81,25 @@ Frontend: `http://localhost:5500`
 
 ## Database
 
-### SQLite (zero-install dev fallback)
-
-Remove `DATABASE_URL` from `.env` entirely. The server creates `lms.db` automatically.
-
-> **Note:** SQLite is only for single-developer use. Data does not persist across container restarts.
-
-### PostgreSQL (recommended)
-
-**Via Docker (easiest):**
+PostgreSQL is the default database. Start it with Docker before running the server:
 
 ```bash
 docker-compose up -d postgres
 ```
 
-Set in `.env`:
+The default connection string (used when `DATABASE_URL` is not set):
 
 ```
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/arresto_lms
+postgresql://postgres:postgres@localhost:5432/arresto_lms
 ```
 
-**Local install:** Install PostgreSQL 16, create `arresto_lms` database, then set `DATABASE_URL` as above.
+Tables are created automatically on first startup.
+
+**Local PostgreSQL install:** Install PostgreSQL 16, create the `arresto_lms` database, then set `DATABASE_URL` in `.env` to match your credentials.
+
+### SQLite (dev-only fallback)
+
+Set `DATABASE_URL=sqlite:///./lms.db` in `.env` to use SQLite instead. Not recommended — data is lost on container restart and does not support concurrent writes.
 
 ---
 
