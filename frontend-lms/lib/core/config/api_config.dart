@@ -1,5 +1,8 @@
 class ApiConfig {
-  // Change this to your deployed backend URL in production.
-  // The backend runs on localhost:8000 in development.
-  static const baseUrl = 'http://localhost:8000';
+  // Injected at Flutter build time via --dart-define=API_BASE_URL=https://your-domain.com
+  // Falls back to localhost for local development.
+  static const baseUrl = String.fromEnvironment(
+    'API_BASE_URL',
+    defaultValue: 'http://localhost:8000',
+  );
 }

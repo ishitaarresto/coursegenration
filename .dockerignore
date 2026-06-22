@@ -1,0 +1,36 @@
+# Python virtualenvs
+.venv/
+.venv-1/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Local databases & caches
+lms.db
+*.db
+chroma_db/
+chroma_db_bge_comparison/
+
+# Uploaded files
+uploads/
+
+# Secrets — never bake into image
+.env
+.env.local
+
+# Flutter source (only the build/web output is needed)
+frontend-lms/
+!frontend-lms/build/
+!frontend-lms/build/web/
+
+# Git
+.git/
+.gitignore
+
+# Dev tooling
+.vscode/
+*.log
+test_*.py
+ONBOARDING.md

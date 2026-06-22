@@ -1,0 +1,80 @@
+{
+  "family": "arresto-lms",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "2048",
+  "memory": "4096",
+  "executionRoleArn": "arn:aws:iam::ACCOUNT_ID:role/ecsTaskExecutionRole",
+  "taskRoleArn": "arn:aws:iam::ACCOUNT_ID:role/arresto-lms-task-role",
+  "containerDefinitions": [
+    {
+      "name": "arresto-lms",
+      "image": "ACCOUNT_ID.dkr.ecr.REGION.amazonaws.com/arresto-lms:latest",
+      "portMappings": [
+        {
+          "containerPort": 8000,
+          "protocol": "tcp"
+        }
+      ],
+      "environment": [
+        { "name": "PROGRESS_DB_PATH",           "value": "/tmp/lms.db" },
+        { "name": "UPLOAD_DIR",                  "value": "/data/uploads" },
+        { "name": "CHROMA_DB_DIR",               "value": "/data/chroma_db" },
+        { "name": "ENABLE_OCR",                  "value": "true" },
+        { "name": "ENABLE_CAPTIONING",           "value": "false" },
+        { "name": "TTS_PROVIDER",                "value": "auto" },
+        { "name": "SARVAM_LANGUAGE",             "value": "en-IN" },
+        { "name": "LLM_MODEL",                   "value": "claude-sonnet-4-6" }
+      ],
+      "secrets": [
+        {
+          "name": "DATABASE_URL",
+          "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:arresto/DATABASE_URL"
+        },
+        {
+          "name": "ANTHROPIC_API_KEY",
+          "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:arresto/ANTHROPIC_API_KEY"
+        },
+        {
+          "name": "HEYGEN_API_KEY",
+          "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:arresto/HEYGEN_API_KEY"
+        },
+        {
+          "name": "SARVAM_API_KEY",
+          "valueFrom": "arn:aws:secretsmanager:REGION:ACCOUNT_ID:secret:arresto/SARVAM_API_KEY"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/arresto-lms",
+          "awslogs-region": "REGION",
+          "awslogs-stream-prefix": "ecs"
+        }
+      },
+      "healthCheck": {
+        "command": ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"],
+        "interval": 30,
+        "timeout": 10,
+        "retries": 3,
+        "startPeriod": 60
+      },
+      "mountPoints": [
+        {
+          "sourceVolume": "efs-data",
+          "containerPath": "/data"
+        }
+      ]
+    }
+  ],
+  "volumes": [
+    {
+      "name": "efs-data",
+      "efsVolumeConfiguration": {
+        "fileSystemId": "fs-XXXXXXXX",
+        "rootDirectory": "/arresto-lms",
+        "transitEncryption": "ENABLED"
+      }
+    }
+  ]
+}

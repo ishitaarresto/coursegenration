@@ -57,6 +57,12 @@ class Settings(BaseSettings):
     # Audio cache — total disk cap across all courses (MB). Oldest files evicted first.
     audio_cache_max_mb: int = 500
 
+    # Progress tracker SQLite path — use /tmp/lms.db for containers (or an EFS mount path)
+    progress_db_path: str = "lms.db"
+
+    # CORS — comma-separated allowed origins; use "*" for dev, real domain(s) for prod
+    cors_origins: str = "*"
+
     # LLM model for course generation and video planning
     llm_model: str = "claude-sonnet-4-6"
 

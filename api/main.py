@@ -123,8 +123,8 @@ async def lifespan(app: FastAPI):
     # Progress tracker — writes to lms.db (same file as ORM tables)
     from modules.progress.tracker import ProgressTracker
     from modules.progress.store   import ProgressStore
-    app.state.progress_tracker = ProgressTracker(store=ProgressStore("lms.db"))
-    logger.info("Progress tracker initialised (lms.db)")
+    app.state.progress_tracker = ProgressTracker(store=ProgressStore(settings.progress_db_path))
+    logger.info("Progress tracker initialised (%s)", settings.progress_db_path)
 
     # Pre-warm OCR engine in the background so the first document upload
     # doesn't stall while EasyOCR downloads its language models (~150 MB).
@@ -185,9 +185,10 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
+_cors_origins = [o.strip() for o in settings.cors_origins.split(",")]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],   # tighten in production
+    allow_origins=_cors_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
