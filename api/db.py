@@ -25,9 +25,11 @@ from __future__ import annotations
 
 import os
 
+from dotenv import load_dotenv
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import DeclarativeBase, sessionmaker, Session
 
+load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./lms.db")
 
 _is_postgres = DATABASE_URL.startswith(("postgresql://", "postgres://"))
